@@ -16,6 +16,7 @@
 #include <Windows.h>
 #include <freeglut.h>
 #include <math.h>
+#include <stdio.h>
 
  /******************************************************************************
   * Animation & Timing Setup
@@ -119,11 +120,12 @@ motionstate4_t keyboardMotion = { MOTION_NONE, MOTION_NONE, MOTION_NONE, MOTION_
  ******************************************************************************/
 
 void display(void);
-void reshape(int width, int h);
+void reshape(int width, int height);
 void keyPressed(unsigned char key, int x, int y);
 void specialKeyPressed(int key, int x, int y);
 void keyReleased(unsigned char key, int x, int y);
 void specialKeyReleased(int key, int x, int y);
+void mouseMoved(int x, int y);
 void idle(void);
 
 /******************************************************************************
@@ -135,15 +137,73 @@ void init(void);
 void think(void);
 void initLights(void);
 
+void initScene(void);
+
+void drawScene(void);
+void drawNode(struct scenegraph_node_t* node);
+
+void drawGrid(void);
+void drawHelicopterBody(void);
+void drawHelicopterTail(void);
+void drawHelicopterRotorShaft(void);
+void drawHelicopterRotor(void);
+
+void drawString(float x, float y, const unsigned char* string);
+
 /******************************************************************************
  * Animation-Specific Setup (Add your own definitions, constants, and globals here)
  ******************************************************************************/
+
+int viewport_width = 1000, viewport_height = 800;
+int prevX = 0, prevY = 0;
+int dx = 0, dy = 0;
+int cameraYaw = 0, cameraPitch = 0;
+int helicopterHeading = 0;
 
 // Render objects as filled polygons (1) or wireframes (0). Default filled.
 int renderFillEnabled = 1;
 
 #define GRID_WIDTH 100
 #define GRID_HEIGHT 100
+
+typedef struct
+{
+	GLfloat x;
+	GLfloat y;
+	GLfloat z;
+	GLfloat w;
+} GLfvector_t;
+
+typedef struct
+{
+	GLfloat m[16];
+} transform_t;
+
+typedef struct
+{
+	transform_t transform;
+	void (*draw)();
+} object_t;
+
+typedef struct
+{
+	object_t* obj;
+
+	struct scenegraph_node_t** children;
+	size_t children_count;
+} scenegraph_node_t;
+
+scenegraph_node_t* scene_graph = NULL;
+object_t* helicopter = NULL;
+
+transform_t get_transform(GLfvector_t translation, GLfvector_t rotation, GLfvector_t scale);
+object_t* create_object(transform_t transform, void (*draw)());
+GLfvector_t create_glfvector4(GLfloat x, GLfloat y, GLfloat z, GLfloat w);
+GLfvector_t create_glfvector3(GLfloat x, GLfloat y, GLfloat z);
+scenegraph_node_t* create_node(object_t* obj);
+void append_child(scenegraph_node_t* parent, scenegraph_node_t* child);
+
+GLfvector_t get_translation(GLfloat m[16]);
 
 /******************************************************************************
  * Entry Point (don't put anything except the main function here)
@@ -154,7 +214,7 @@ void main(int argc, char **argv)
 	// Initialize the OpenGL window.
 	glutInit(&argc, argv);
 	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
-	glutInitWindowSize(1000, 800);
+	glutInitWindowSize(viewport_width, viewport_height);
 	glutCreateWindow("Animation");
 
 	// Set up the scene.
@@ -170,6 +230,7 @@ void main(int argc, char **argv)
 	glutSpecialFunc(specialKeyPressed);
 	glutKeyboardUpFunc(keyReleased);
 	glutSpecialUpFunc(specialKeyReleased);
+	glutPassiveMotionFunc(mouseMoved);
 	glutIdleFunc(idle);
 
 	// Record when we started rendering the very first frame (which should happen after we call glutMainLoop).
@@ -203,54 +264,28 @@ void display(void)
 	*/
 
 	glClear(GL_COLOR_BUFFER_BIT);
+	glClear(GL_DEPTH_BUFFER_BIT);
 
 	glPolygonMode(GL_FRONT_AND_BACK, renderFillEnabled ? GL_FILL : GL_LINE);
 
-	for (int x = -GRID_WIDTH / 2; x < GRID_WIDTH / 2; x++)
-	{
-		glPushMatrix();
-		glTranslatef(x, 0, 0);
-		
-		for (int z = -GRID_HEIGHT / 2; z < GRID_HEIGHT / 2; z++)
-		{
-			glPushMatrix();
-			glTranslatef(0, 0, z);
-
-			glBegin(GL_TRIANGLE_FAN);
-
-			glColor4f(1.0f, 0.0f, 0.0f, 1.0f);
-			glVertex3f(0.0f, 0.0f, 0.0f);
-			glVertex3f(10.0f, 0.0f, 0.0f);
-			glVertex3f(0.0f, 0.0f, 10.0f);
-
-			glEnd();
-
-			glPopMatrix();
-		}
-
-		glPopMatrix();
-	}
-
-	glPushMatrix();
-	glTranslatef(0.0f, 0.0, -1000.0);
-	glBegin(GL_TRIANGLE_FAN);
-
-	glColor4f(1.0, 0.0, 0.0, 1.0);
-	glVertex3f(0, 0, 0);
-	glVertex3f(100, 0, 0);
-	glVertex3f(0, 100, 0);
-
-	glEnd();
-	glPopMatrix();
-
-	glutSwapBuffers();
+	drawScene();
 }
 
 /*
 	Called when the OpenGL window has been resized.
 */
-void reshape(int width, int h)
+void reshape(int width, int height)
 {
+	viewport_width = width;
+	viewport_height = height;
+
+	glMatrixMode(GL_PROJECTION);
+	glLoadIdentity();
+	gluPerspective(89, (float)width / (float)height, 0.1, 1000.0);
+	glPushMatrix();
+
+	glMatrixMode(GL_MODELVIEW);
+	glViewport(0, 0, width, height);
 }
 
 /*
@@ -433,6 +468,14 @@ void specialKeyReleased(int key, int x, int y)
 	}
 }
 
+void mouseMoved(int x, int y)
+{
+	dx = (viewport_width / 2) - x;
+	dy = (viewport_height / 2) - y;
+
+	glutWarpPointer(viewport_width / 2, viewport_height / 2);
+}
+
 /*
 	Called by GLUT when it's not rendering a frame.
 
@@ -460,6 +503,7 @@ void idle(void)
 	think(); // Update our simulated world before the next call to display().
 
 	glutPostRedisplay(); // Tell OpenGL there's a new frame ready to be drawn.
+	glutSwapBuffers();
 }
 
 /******************************************************************************
@@ -475,15 +519,18 @@ void init(void)
 
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
-	gluPerspective(45, 1.333, 0.1, 1000.0);
+	gluPerspective(45, (float)viewport_width / (float)viewport_height, 0.1, 1000.0);
+	glutSetCursor(GLUT_CURSOR_NONE);
 
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
-	//gluLookAt(0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
+
+	glEnable(GL_DEPTH_TEST);
 
 	initLights();
 	
 	// Anything that relies on lighting or specifies normals must be initialised after initLights.
+	initScene();
 }
 
 /*
@@ -536,12 +583,41 @@ void think(void)
 		brightness of lights, etc.
 	*/
 
+	// Update camera
+	glMatrixMode(GL_PROJECTION);
+	glPopMatrix();
+	glPushMatrix();
+	glTranslatef(0, 0, -10);
+	glRotatef(cameraPitch, 1, 0, 0);
+	glRotatef(cameraYaw, 0, 1, 0);
+	cameraPitch = fmod(cameraPitch + dy * 100 * FRAME_TIME_SEC, 360.0f);
+	cameraYaw = fmod(cameraYaw + helicopterHeading + dx * 100 * FRAME_TIME_SEC, 360.0f);
+	dx = 0;
+	dy = 0;
+	glTranslatef(0, 0, 10);
+
+	glMatrixMode(GL_MODELVIEW);
+
 	/*
 		Keyboard motion handler: complete this section to make your "player-controlled"
 		object respond to keyboard input.
 	*/
 	if (keyboardMotion.Yaw != MOTION_NONE) {
 		/* TEMPLATE: Turn your object right (clockwise) if .Yaw < 0, or left (anticlockwise) if .Yaw > 0 */
+		glPushMatrix();
+		glLoadIdentity();
+
+		GLfvector_t vec = get_translation(helicopter->transform.m);
+
+		glTranslatef(-vec.x, -vec.y, -vec.z);
+		glRotatef(FRAME_TIME_SEC * 100 * keyboardMotion.Yaw, 0, 1, 0);
+		helicopterHeading += FRAME_TIME_SEC * 100 * keyboardMotion.Yaw;
+		glTranslatef(vec.x, vec.y, vec.z);
+
+		glMultMatrixf(helicopter->transform.m);
+		glGetFloatv(GL_MODELVIEW_MATRIX, helicopter->transform.m);
+
+		glPopMatrix();
 	}
 	if (keyboardMotion.Surge != MOTION_NONE) {
 		/* TEMPLATE: Move your object backward if .Surge < 0, or forward if .Surge > 0 */
@@ -591,3 +667,291 @@ void initLights(void)
 }
 
 /******************************************************************************/
+#define DRAW_STRING(x, y, ...) { unsigned char str[256]; snprintf(str, sizeof str, __VA_ARGS__); drawString(x, y, str); }
+
+void initScene(void)
+{
+	scenegraph_node_t* grid = create_node(
+		create_object(
+			get_transform(
+				create_glfvector3(0, -2, 0),
+				create_glfvector3(0, 0, 0),
+				create_glfvector3(1, 1, 1)
+			),
+			drawGrid
+		)
+	);
+
+	scenegraph_node_t* helicopter_body = create_node(
+		create_object(
+			get_transform(
+				create_glfvector3(0, 0, -10),
+				create_glfvector3(0, 0, 0),
+				create_glfvector3(2, 1, 1)),
+			drawHelicopterBody));
+
+	scenegraph_node_t* helicopter_tail = create_node(
+		create_object(
+			get_transform(
+				create_glfvector3(0, 0, 0.5f),
+				create_glfvector4(0, 1, 0, 90),
+				create_glfvector3(0.25, 0.25, 2)),
+			drawHelicopterTail));
+
+	scenegraph_node_t* helicopter_rotor = create_node(
+		create_object(
+			get_transform(
+				create_glfvector3(0, 1, 0),
+				create_glfvector3(0, 0, 0),
+				create_glfvector3(1, 1, 1)
+			),
+			drawHelicopterRotor
+		));
+
+	scenegraph_node_t* helicopter_tail_rotor = create_node(
+		create_object(
+			get_transform(
+				create_glfvector3(0, 0, 0),
+				create_glfvector3(0, 0, 0),
+				create_glfvector3(1, 1, 1)
+			),
+			drawHelicopterRotor
+		)
+	);
+
+	scene_graph = create_node(create_object(get_transform(create_glfvector3(0, 0, 0), create_glfvector3(0, 0, 0), create_glfvector3(1, 1, 1)), NULL));
+	append_child(scene_graph, grid);
+	append_child(scene_graph, helicopter_body);
+	append_child(helicopter_body, helicopter_tail);
+	append_child(helicopter_tail, helicopter_tail_rotor);
+	append_child(helicopter_body, helicopter_rotor);
+
+	helicopter = helicopter_body->obj;
+}
+
+transform_t get_transform(GLfvector_t translation, GLfvector_t rotation, GLfvector_t scale)
+{
+	transform_t transform = { 0 };
+
+	glPushMatrix();
+	glLoadIdentity();
+
+	glRotatef(rotation.w, rotation.x, rotation.y, rotation.z);
+	glTranslatef(translation.x, translation.y, translation.z);
+	glScalef(scale.x, scale.y, scale.z);
+
+	glGetFloatv(GL_MODELVIEW_MATRIX, transform.m);
+
+	glPopMatrix();
+
+	return transform;
+}
+
+object_t* create_object(transform_t transform, void (*draw)())
+{
+	object_t* object = malloc(sizeof(object_t));
+
+	if (object == NULL)
+	{
+		return NULL;
+	}
+
+	object->transform = transform;
+	object->draw = draw;
+
+	return object;
+}
+
+GLfvector_t create_glfvector4(GLfloat x, GLfloat y, GLfloat z, GLfloat w)
+{
+	GLfvector_t glfvector;
+
+	glfvector.x = x;
+	glfvector.y = y;
+	glfvector.z = z;
+	glfvector.w = w;
+
+	return glfvector;
+}
+
+GLfvector_t create_glfvector3(GLfloat x, GLfloat y, GLfloat z)
+{
+	return create_glfvector4(x, y, z, 0);
+}
+
+scenegraph_node_t* create_node(object_t* obj)
+{
+	scenegraph_node_t* node = malloc(sizeof(scenegraph_node_t));
+
+	if (node != NULL)
+	{
+		node->obj = obj;
+		node->children = NULL;
+		node->children_count = 0;
+	}
+
+	return node;
+}
+
+void append_child(scenegraph_node_t* parent, scenegraph_node_t* child)
+{
+	if (child == NULL)
+	{
+		return;
+	}
+
+	scenegraph_node_t** children = parent->children;
+	scenegraph_node_t** newChildren = malloc(sizeof(scenegraph_node_t*) * (parent->children_count + 1));
+
+	if (newChildren == NULL)
+	{
+		return;
+	}
+
+	if (parent->children != NULL)
+	{
+		memcpy(newChildren, children, sizeof(scenegraph_node_t*) * parent->children_count);
+
+		free(parent->children);
+		parent->children = NULL;
+	}
+
+	parent->children = newChildren;
+
+	memcpy(&newChildren[parent->children_count], &child, sizeof(scenegraph_node_t*));
+
+	parent->children_count += 1;
+}
+
+GLfvector_t get_translation(GLfloat m[16])
+{
+	return create_glfvector3(-m[12], -m[13], -m[14]);
+}
+
+void drawScene(void)
+{
+	// Draw scene graph
+	drawNode(scene_graph);
+
+	DRAW_STRING(0, 0, "Helicopter Position");
+
+	GLfvector_t helicopter_position = get_translation(helicopter->transform.m);
+	DRAW_STRING(0, 15, "x: %f y: %f z: %f", helicopter_position.x, helicopter_position.y, helicopter_position.z);
+}
+
+void drawNode(scenegraph_node_t* node)
+{
+	object_t* obj = node->obj;
+	scenegraph_node_t** children = node->children;
+	size_t children_count = node->children_count;
+
+	glPushMatrix();
+	glMultMatrixf(obj->transform.m);
+
+	if (obj->draw != NULL)
+	{
+		obj->draw();
+	}
+
+	for (size_t index = 0; index < children_count; index++)
+	{
+		scenegraph_node_t* child = children[index];
+		drawNode(child);
+	}
+
+	glPopMatrix();
+}
+
+void drawGrid(void)
+{
+	for (int x = -GRID_WIDTH / 2; x < GRID_WIDTH / 2; x++)
+	{
+		glPushMatrix();
+		glTranslatef(x, 0, 0);
+
+		for (int z = -GRID_HEIGHT / 2; z < GRID_HEIGHT / 2; z++)
+		{
+			glPushMatrix();
+			glTranslatef(0, 0, z);
+
+			glBegin(GL_TRIANGLE_FAN);
+
+			glColor4f(0.0f, 1.0f, 0.0f, 1.0f);
+			glVertex3f(0.0f, 0.0f, 0.0f);
+			glVertex3f(1.0f, 0.0f, 0.0f);
+			glVertex3f(1.0f, 0.0f, 1.0f);
+			glVertex3f(1.0f, 0.0f, 1.0f);
+			glVertex3f(0.0f, 0.0f, 1.0f);
+			glVertex3f(0.0f, 0.0f, 0.0f);
+
+			glEnd();
+
+			glPopMatrix();
+		}
+
+		glPopMatrix();
+	}
+}
+
+void drawHelicopterBody(void)
+{
+	glColor4f(1.0, 0.0, 0.0, 1.0);
+	glutSolidSphere(1.0, 20, 20);
+}
+
+void drawHelicopterTail(void)
+{
+	glColor4f(1.0, 1.0, 0.0, 1.0);
+	glutSolidCylinder(1.0, 1.0, 20, 20);
+}
+
+void drawHelicopterRotorShaft(void)
+{
+
+}
+
+void drawHelicopterRotor(void)
+{
+	float vertices[][3] =
+	{
+		{ -1.0, 0.0, -1.0 },
+		{ 1.0, 0.0, -1.0 },
+		{ 1.0, 0.0, 1.0 },
+
+		{ 1.0, 0.0, 1.0 },
+		{ -1.0, 0.0, 1.0 },
+		{ -1.0, 0.0, -1.0 },
+	};
+
+	glEnableClientState(GL_VERTEX_ARRAY);
+	glVertexPointer(3, GL_FLOAT, 0, &vertices);
+	glDrawArrays(GL_TRIANGLES, 0, sizeof(vertices) / sizeof(vertices[0]));
+	glDisableClientState(GL_VERTEX_ARRAY);
+}
+
+void drawString(float x, float y, const unsigned char* string)
+{
+	glMatrixMode(GL_PROJECTION);
+	glPushMatrix();
+	glLoadIdentity();
+
+	glMatrixMode(GL_MODELVIEW);
+	glPushMatrix();
+	glLoadIdentity();
+	gluOrtho2D(0, viewport_width, viewport_height, 0);
+
+	glDisable(GL_LIGHTING);
+
+	glColor4f(1.0, 1.0, 1.0, 1.0);
+	glRasterPos2f(x + 3, y + 15); // Draw text in screen space.
+	glutBitmapString(GLUT_BITMAP_8_BY_13, string);
+
+	glEnable(GL_LIGHTING);
+
+	glPopMatrix();
+
+	glMatrixMode(GL_PROJECTION);
+	glPopMatrix();
+
+	glMatrixMode(GL_MODELVIEW);
+}
