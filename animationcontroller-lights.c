@@ -106,6 +106,7 @@ motionstate4_t keyboardMotion = { MOTION_NONE, MOTION_NONE, MOTION_NONE, MOTION_
 #define KEY_MOVE_LEFT		'a'
 #define KEY_MOVE_RIGHT		'd'
 #define KEY_RENDER_FILL		'l'
+#define KEY_CAMERA			'c'
 #define KEY_EXIT			27 // Escape key.
 
 // Define all GLUT special keys used for input (add any new key definitions here).
@@ -154,11 +155,16 @@ void drawString(float x, float y, const unsigned char* string);
  * Animation-Specific Setup (Add your own definitions, constants, and globals here)
  ******************************************************************************/
 
-int viewport_width = 1000, viewport_height = 800;
-int prevX = 0, prevY = 0;
+// Orbit camera settings
 int dx = 0, dy = 0;
-int cameraYaw = 0, cameraPitch = 0;
-int helicopterHeading = 0;
+float cameraYaw = 0, cameraPitch = 0;
+int orbitCamera = 0;
+
+int viewport_width = 1000, viewport_height = 800;
+
+float helicopterHeading = 0;
+float helicopterPitch = 0;
+float helicopterRotorSpeed = 0;
 
 // Render objects as filled polygons (1) or wireframes (0). Default filled.
 int renderFillEnabled = 1;
@@ -194,7 +200,9 @@ typedef struct
 } scenegraph_node_t;
 
 scenegraph_node_t* scene_graph = NULL;
-object_t* helicopter = NULL;
+object_t* _helicopter = NULL;
+object_t* _helicopter_rotor_shaft = NULL;
+object_t* _helicopter_tail_rotor_shaft = NULL;
 
 transform_t get_transform(GLfvector_t translation, GLfvector_t rotation, GLfvector_t scale);
 object_t* create_object(transform_t transform, void (*draw)());
@@ -204,6 +212,8 @@ scenegraph_node_t* create_node(object_t* obj);
 void append_child(scenegraph_node_t* parent, scenegraph_node_t* child);
 
 GLfvector_t get_translation(GLfloat m[16]);
+
+#define DRAW_STRING(x, y, ...) { unsigned char str[256]; snprintf(str, sizeof str, __VA_ARGS__); drawString(x, y, str); }
 
 /******************************************************************************
  * Entry Point (don't put anything except the main function here)
@@ -231,6 +241,7 @@ void main(int argc, char **argv)
 	glutKeyboardUpFunc(keyReleased);
 	glutSpecialUpFunc(specialKeyReleased);
 	glutPassiveMotionFunc(mouseMoved);
+	glutMotionFunc(mouseMoved);
 	glutIdleFunc(idle);
 
 	// Record when we started rendering the very first frame (which should happen after we call glutMainLoop).
@@ -267,6 +278,48 @@ void display(void)
 	glClear(GL_DEPTH_BUFFER_BIT);
 
 	glPolygonMode(GL_FRONT_AND_BACK, renderFillEnabled ? GL_FILL : GL_LINE);
+
+	// Update camera
+	GLfvector_t helicopter_position = get_translation(_helicopter->transform.m);
+	float camX = helicopter_position.x + sin((helicopterHeading) * 3.1415f / 180.0f) * 10.0f;
+	float camZ = helicopter_position.z + cos((helicopterHeading) * 3.1415f / 180.0f) * 10.0f;
+
+	glLoadIdentity();
+	
+	if(orbitCamera)
+	{
+		cameraYaw = fmod(cameraYaw + dx * 50 * FRAME_TIME_SEC, 360.0f);
+		cameraPitch += dy * 50 * FRAME_TIME_SEC;
+
+		if (cameraPitch > 90.0f)
+		{
+			cameraPitch = 90.0f;
+		}
+		else if (cameraPitch < -90.0f)
+		{
+			cameraPitch = -90.0f;
+		}
+
+		gluLookAt(
+			helicopter_position.x + sin((cameraYaw + helicopterHeading) * 3.1415f / 180.0f) * 10.0f,
+			helicopter_position.y + sin(cameraPitch * 3.1415f / 180.0f) * 10.0f,
+			helicopter_position.z + cos((cameraYaw + helicopterHeading) * 3.1415f / 180.0f) * 10.0f,
+			helicopter_position.x,
+			helicopter_position.y,
+			helicopter_position.z,
+			0,
+			1,
+			0);
+
+		dx = 0;
+		dy = 0;
+
+		DRAW_STRING(0, 100, "Camera Yaw: %f Camera Pitch: %f", cameraYaw, cameraPitch);
+	}
+	else
+	{
+		gluLookAt(camX, helicopter_position.y + 5.0f, camZ, helicopter_position.x, helicopter_position.y, helicopter_position.z, 0, 1, 0);
+	}
 
 	drawScene();
 }
@@ -333,6 +386,10 @@ void keyPressed(unsigned char key, int x, int y)
 	*/
 	case KEY_RENDER_FILL:
 		renderFillEnabled = !renderFillEnabled;
+		break;
+	case KEY_CAMERA:
+		orbitCamera = !orbitCamera;
+		glutSetCursor(orbitCamera ? GLUT_CURSOR_NONE : GLUT_CURSOR_INHERIT);
 		break;
 	case KEY_EXIT:
 		exit(0);
@@ -470,6 +527,11 @@ void specialKeyReleased(int key, int x, int y)
 
 void mouseMoved(int x, int y)
 {
+	if (orbitCamera == 0)
+	{
+		return;
+	}
+
 	dx = (viewport_width / 2) - x;
 	dy = (viewport_height / 2) - y;
 
@@ -520,7 +582,6 @@ void init(void)
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
 	gluPerspective(45, (float)viewport_width / (float)viewport_height, 0.1, 1000.0);
-	glutSetCursor(GLUT_CURSOR_NONE);
 
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
@@ -583,20 +644,52 @@ void think(void)
 		brightness of lights, etc.
 	*/
 
-	// Update camera
-	glMatrixMode(GL_PROJECTION);
-	glPopMatrix();
-	glPushMatrix();
-	glTranslatef(0, 0, -10);
-	glRotatef(cameraPitch, 1, 0, 0);
-	glRotatef(cameraYaw, 0, 1, 0);
-	cameraPitch = fmod(cameraPitch + dy * 100 * FRAME_TIME_SEC, 360.0f);
-	cameraYaw = fmod(cameraYaw + helicopterHeading + dx * 100 * FRAME_TIME_SEC, 360.0f);
-	dx = 0;
-	dy = 0;
-	glTranslatef(0, 0, 10);
+	// Update helicopter altitude
+	float altitude = sqrtf(helicopterRotorSpeed) * (log(helicopterRotorSpeed / 100 + 1) / log(10)) - 10.0f;
 
-	glMatrixMode(GL_MODELVIEW);
+	if (altitude < 0.0f)
+	{
+		altitude = 0.0f;
+	}
+
+	{
+		if (altitude >= 0.0f)
+		{
+			GLfvector_t helicopter_position = get_translation(_helicopter->transform.m);
+
+			glPushMatrix();
+			glLoadMatrixf(_helicopter->transform.m);
+			glTranslatef(0, -helicopter_position.y, 0);
+			glTranslatef(0, altitude, 0);
+			glGetFloatv(GL_MODELVIEW_MATRIX, _helicopter->transform.m);
+			glPopMatrix();
+		}
+
+		helicopterRotorSpeed -= 5.0f * FRAME_TIME_SEC;
+
+		if (altitude <= 0.0f)
+		{
+			helicopterRotorSpeed -= 40.0f * FRAME_TIME_SEC;
+		}
+
+		if (helicopterRotorSpeed < 0.0f)
+		{
+			helicopterRotorSpeed = 0.0f;
+		}
+	}
+
+	// Update rotors
+	glPushMatrix();
+	glLoadMatrixf(_helicopter_rotor_shaft->transform.m);
+	glRotatef(360.0f * (helicopterRotorSpeed / 60.0f) * FRAME_TIME_SEC, 0, 1, 0);
+	glGetFloatv(GL_MODELVIEW_MATRIX, _helicopter_rotor_shaft->transform.m);
+	glPopMatrix();
+
+	glPushMatrix();
+	glLoadMatrixf(_helicopter_tail_rotor_shaft->transform.m);
+	glRotatef(4.0f * 360.0f * (helicopterRotorSpeed / 60.0f) * FRAME_TIME_SEC, 0, 1, 0);
+	glGetFloatv(GL_MODELVIEW_MATRIX, _helicopter_tail_rotor_shaft->transform.m);
+	glPopMatrix();
 
 	/*
 		Keyboard motion handler: complete this section to make your "player-controlled"
@@ -604,29 +697,59 @@ void think(void)
 	*/
 	if (keyboardMotion.Yaw != MOTION_NONE) {
 		/* TEMPLATE: Turn your object right (clockwise) if .Yaw < 0, or left (anticlockwise) if .Yaw > 0 */
-		glPushMatrix();
-		glLoadIdentity();
 
-		GLfvector_t vec = get_translation(helicopter->transform.m);
+		GLfvector_t helicopter_position = get_translation(_helicopter->transform.m);
 
-		glTranslatef(-vec.x, -vec.y, -vec.z);
-		glRotatef(FRAME_TIME_SEC * 100 * keyboardMotion.Yaw, 0, 1, 0);
-		helicopterHeading += FRAME_TIME_SEC * 100 * keyboardMotion.Yaw;
-		glTranslatef(vec.x, vec.y, vec.z);
+		if (helicopter_position.y > 0.0f)
+		{
+			glPushMatrix();
+			glLoadMatrixf(_helicopter->transform.m);
 
-		glMultMatrixf(helicopter->transform.m);
-		glGetFloatv(GL_MODELVIEW_MATRIX, helicopter->transform.m);
+			GLfvector_t vec = get_translation(_helicopter->transform.m);
 
-		glPopMatrix();
+			glRotatef(FRAME_TIME_SEC * 100 * keyboardMotion.Yaw, 0, 1, 0);
+			helicopterHeading = fmod(helicopterHeading + FRAME_TIME_SEC * 100 * keyboardMotion.Yaw, 360.0f);
+
+			if (helicopterHeading < 0.0f)
+			{
+				helicopterHeading += 360.0f;
+			}
+
+			glGetFloatv(GL_MODELVIEW_MATRIX, _helicopter->transform.m);
+
+			glPopMatrix();
+		}
 	}
 	if (keyboardMotion.Surge != MOTION_NONE) {
 		/* TEMPLATE: Move your object backward if .Surge < 0, or forward if .Surge > 0 */
+
+		GLfvector_t helicopter_position = get_translation(_helicopter->transform.m);
+
+		if (helicopter_position.y > 0.0f)
+		{
+			glPushMatrix();
+			glLoadMatrixf(_helicopter->transform.m);
+			glTranslatef(0, 0, -keyboardMotion.Surge * FRAME_TIME_SEC * 10);
+			glGetFloatv(GL_MODELVIEW_MATRIX, _helicopter->transform.m);
+			glPopMatrix();
+		}
 	}
 	if (keyboardMotion.Sway != MOTION_NONE) {
 		/* TEMPLATE: Move (strafe) your object left if .Sway < 0, or right if .Sway > 0 */
+		GLfvector_t helicopter_position = get_translation(_helicopter->transform.m);
+
+		if (helicopter_position.y > 0.0f)
+		{
+			glPushMatrix();
+			glLoadMatrixf(_helicopter->transform.m);
+			glTranslatef(keyboardMotion.Sway * FRAME_TIME_SEC * 10, 0, 0);
+			glGetFloatv(GL_MODELVIEW_MATRIX, _helicopter->transform.m);
+			glPopMatrix();
+		}
 	}
 	if (keyboardMotion.Heave != MOTION_NONE) {
 		/* TEMPLATE: Move your object down if .Heave < 0, or up if .Heave > 0 */
+		helicopterRotorSpeed += keyboardMotion.Heave * 80.0f * FRAME_TIME_SEC;
 	}
 }
 
@@ -667,14 +790,13 @@ void initLights(void)
 }
 
 /******************************************************************************/
-#define DRAW_STRING(x, y, ...) { unsigned char str[256]; snprintf(str, sizeof str, __VA_ARGS__); drawString(x, y, str); }
 
 void initScene(void)
 {
 	scenegraph_node_t* grid = create_node(
 		create_object(
 			get_transform(
-				create_glfvector3(0, -2, 0),
+				create_glfvector3(0, -1.0, 0),
 				create_glfvector3(0, 0, 0),
 				create_glfvector3(1, 1, 1)
 			),
@@ -682,20 +804,31 @@ void initScene(void)
 		)
 	);
 
+	scenegraph_node_t* helicopter = create_node(
+		create_object(
+			get_transform(
+				create_glfvector3(0, 0, 0),
+				create_glfvector4(0, 1, 0, 0),
+				create_glfvector3(1, 1, 1)
+			),
+			NULL
+		)
+	);
+
 	scenegraph_node_t* helicopter_body = create_node(
 		create_object(
 			get_transform(
-				create_glfvector3(0, 0, -10),
 				create_glfvector3(0, 0, 0),
-				create_glfvector3(2, 1, 1)),
+				create_glfvector3(0, 0, 0),
+				create_glfvector3(1, 1, 2)),
 			drawHelicopterBody));
 
 	scenegraph_node_t* helicopter_tail = create_node(
 		create_object(
 			get_transform(
-				create_glfvector3(0, 0, 0.5f),
-				create_glfvector4(0, 1, 0, 90),
-				create_glfvector3(0.25, 0.25, 2)),
+				create_glfvector3(0, 0.0f, 0.5f),
+				create_glfvector3(0, 0, 0),
+				create_glfvector3(0.125f, 0.25f, 1.5f)),
 			drawHelicopterTail));
 
 	scenegraph_node_t* helicopter_rotor = create_node(
@@ -703,7 +836,7 @@ void initScene(void)
 			get_transform(
 				create_glfvector3(0, 1, 0),
 				create_glfvector3(0, 0, 0),
-				create_glfvector3(1, 1, 1)
+				create_glfvector3(2, 1, 2)
 			),
 			drawHelicopterRotor
 		));
@@ -711,9 +844,9 @@ void initScene(void)
 	scenegraph_node_t* helicopter_tail_rotor = create_node(
 		create_object(
 			get_transform(
-				create_glfvector3(0, 0, 0),
-				create_glfvector3(0, 0, 0),
-				create_glfvector3(1, 1, 1)
+				create_glfvector3(0.0f, 0.5f, 5.0f),
+				create_glfvector4(0, 0, 1, 90),
+				create_glfvector3(2, 2, 0.185f)
 			),
 			drawHelicopterRotor
 		)
@@ -721,12 +854,15 @@ void initScene(void)
 
 	scene_graph = create_node(create_object(get_transform(create_glfvector3(0, 0, 0), create_glfvector3(0, 0, 0), create_glfvector3(1, 1, 1)), NULL));
 	append_child(scene_graph, grid);
-	append_child(scene_graph, helicopter_body);
+	append_child(scene_graph, helicopter);
+	append_child(helicopter, helicopter_body);
 	append_child(helicopter_body, helicopter_tail);
 	append_child(helicopter_tail, helicopter_tail_rotor);
-	append_child(helicopter_body, helicopter_rotor);
+	append_child(helicopter, helicopter_rotor);
 
-	helicopter = helicopter_body->obj;
+	_helicopter = helicopter->obj;
+	_helicopter_rotor_shaft = helicopter_rotor->obj;
+	_helicopter_tail_rotor_shaft = helicopter_tail_rotor->obj;
 }
 
 transform_t get_transform(GLfvector_t translation, GLfvector_t rotation, GLfvector_t scale)
@@ -736,9 +872,9 @@ transform_t get_transform(GLfvector_t translation, GLfvector_t rotation, GLfvect
 	glPushMatrix();
 	glLoadIdentity();
 
+	glScalef(scale.x, scale.y, scale.z);
 	glRotatef(rotation.w, rotation.x, rotation.y, rotation.z);
 	glTranslatef(translation.x, translation.y, translation.z);
-	glScalef(scale.x, scale.y, scale.z);
 
 	glGetFloatv(GL_MODELVIEW_MATRIX, transform.m);
 
@@ -825,7 +961,7 @@ void append_child(scenegraph_node_t* parent, scenegraph_node_t* child)
 
 GLfvector_t get_translation(GLfloat m[16])
 {
-	return create_glfvector3(-m[12], -m[13], -m[14]);
+	return create_glfvector3(m[12], m[13], m[14]);
 }
 
 void drawScene(void)
@@ -835,8 +971,14 @@ void drawScene(void)
 
 	DRAW_STRING(0, 0, "Helicopter Position");
 
-	GLfvector_t helicopter_position = get_translation(helicopter->transform.m);
+	GLfvector_t helicopter_position = get_translation(_helicopter->transform.m);
 	DRAW_STRING(0, 15, "x: %f y: %f z: %f", helicopter_position.x, helicopter_position.y, helicopter_position.z);
+
+	DRAW_STRING(0, 30, "Helicopter Heading");
+	DRAW_STRING(0, 45, "%.2f degrees", helicopterHeading);
+
+	DRAW_STRING(0, 60, "Helicopter Rotor Speed:");
+	DRAW_STRING(0, 75, "%f RPM", helicopterRotorSpeed);
 }
 
 void drawNode(scenegraph_node_t* node)
@@ -905,22 +1047,31 @@ void drawHelicopterTail(void)
 	glutSolidCylinder(1.0, 1.0, 20, 20);
 }
 
-void drawHelicopterRotorShaft(void)
-{
-
-}
-
 void drawHelicopterRotor(void)
 {
+	glPushMatrix();
+	glTranslatef(0, 0.1, 0);
+	glRotatef(90, 1, 0, 0);
+	glutSolidCylinder(0.1, 0.1, 10, 10);
+	glPopMatrix();
+
 	float vertices[][3] =
 	{
-		{ -1.0, 0.0, -1.0 },
-		{ 1.0, 0.0, -1.0 },
-		{ 1.0, 0.0, 1.0 },
+		{ -1.0, 0.105, -0.05 },
+		{ 1.0, 0.105, -0.05 },
+		{ 1.0, 0.105, 0.05 },
 
-		{ 1.0, 0.0, 1.0 },
-		{ -1.0, 0.0, 1.0 },
-		{ -1.0, 0.0, -1.0 },
+		{ 1.0, 0.105, 0.05 },
+		{ -1.0, 0.105, 0.05 },
+		{ -1.0, 0.105, -0.05 },
+
+		{ -0.05, 0.105, -1.0 },
+		{ 0.05, 0.105, -1.0 },
+		{ 0.05, 0.105, 1.0 },
+
+		{ 0.05, 0.105, 1.0 },
+		{ -0.05, 0.105, 1.0 },
+		{ -0.05, 0.105, -1.0 },
 	};
 
 	glEnableClientState(GL_VERTEX_ARRAY);
