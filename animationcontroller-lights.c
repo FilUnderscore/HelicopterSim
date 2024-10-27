@@ -138,22 +138,79 @@ void init(void);
 void think(void);
 void initLights(void);
 
+void updateLightState(struct light_t* light, int index);
+void drawLights(void);
+
 void initScene(void);
 
 void drawScene(void);
 void drawNode(struct scenegraph_node_t* node);
 
-void drawGrid(void);
-void drawHelicopterBody(void);
-void drawHelicopterTail(void);
-void drawHelicopterRotorShaft(void);
-void drawHelicopterRotor(void);
+void drawGrid(int** displayList);
+void drawOcean(int** displayList);
+void drawHelicopterBody(int** displayList);
+void drawHelicopterTail(int** displayList);
+void drawHelicopterRotor(int** displayList);
+
+float getGroundHeight(float x, float z);
+
+double perlin(double x, double y, double z);
+double fade(double t);
+double lerp(double t, double a, double b);
+double grad(int hash, double x, double y, double z);
 
 void drawString(float x, float y, const unsigned char* string);
+
+void loadImage(const char* filename, int* imageWidth, int* imageHeight, GLubyte** imageData);
+void drawSkybox();
 
 /******************************************************************************
  * Animation-Specific Setup (Add your own definitions, constants, and globals here)
  ******************************************************************************/
+
+int p[512] = {
+	151,160,137,91,90,15,
+   131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23,
+   190, 6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,35,11,32,57,177,33,
+   88,237,149,56,87,174,20,125,136,171,168, 68,175,74,165,71,134,139,48,27,166,
+   77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,55,46,245,40,244,
+   102,143,54, 65,25,63,161, 1,216,80,73,209,76,132,187,208, 89,18,169,200,196,
+   135,130,116,188,159,86,164,100,109,198,173,186, 3,64,52,217,226,250,124,123,
+   5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,189,28,42,
+   223,183,170,213,119,248,152, 2,44,154,163, 70,221,153,101,155,167, 43,172,9,
+   129,22,39,253, 19,98,108,110,79,113,224,232,178,185, 112,104,218,246,97,228,
+   251,34,242,193,238,210,144,12,191,179,162,241, 81,51,145,235,249,14,239,107,
+   49,192,214, 31,181,199,106,157,184, 84,204,176,115,121,50,45,127, 4,150,254,
+   138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180,
+   151,160,137,91,90,15,
+   131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23,
+   190, 6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,35,11,32,57,177,33,
+   88,237,149,56,87,174,20,125,136,171,168, 68,175,74,165,71,134,139,48,27,166,
+   77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,55,46,245,40,244,
+   102,143,54, 65,25,63,161, 1,216,80,73,209,76,132,187,208, 89,18,169,200,196,
+   135,130,116,188,159,86,164,100,109,198,173,186, 3,64,52,217,226,250,124,123,
+   5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,189,28,42,
+   223,183,170,213,119,248,152, 2,44,154,163, 70,221,153,101,155,167, 43,172,9,
+   129,22,39,253, 19,98,108,110,79,113,224,232,178,185, 112,104,218,246,97,228,
+   251,34,242,193,238,210,144,12,191,179,162,241, 81,51,145,235,249,14,239,107,
+   49,192,214, 31,181,199,106,157,184, 84,204,176,115,121,50,45,127, 4,150,254,
+   138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180
+};
+
+int groundTextureWidth, groundTextureHeight;
+GLubyte* groundTexture;
+
+const char** skyboxTextureFilenames[3] =
+{
+	"bluecloud_bk.ppm",
+	"bluecloud_rt.ppm",
+	"bluecloud_lf.ppm",
+};
+
+int** skyboxTextureWidths[3];
+int** skyboxTextureHeights[3];
+
+GLubyte** skyboxTextures[3];
 
 // Orbit camera settings
 int dx = 0, dy = 0;
@@ -188,21 +245,46 @@ typedef struct
 typedef struct
 {
 	transform_t transform;
-	void (*draw)();
+	void (*draw)(int**);
 } object_t;
 
 typedef struct
 {
 	object_t* obj;
+	int* displayList;
 
 	struct scenegraph_node_t** children;
 	size_t children_count;
 } scenegraph_node_t;
 
+typedef enum
+{
+	directional,
+	spot
+} lighttype_t;
+
+typedef struct
+{
+	GLfvector_t position;
+	GLfvector_t color;
+	GLfvector_t spotDirection;
+
+	float intensity;
+	float spotCutoffAngle;
+
+	lighttype_t type;
+	int enabled;
+	int dirty;
+} light_t;
+
 scenegraph_node_t* scene_graph = NULL;
 object_t* _helicopter = NULL;
 object_t* _helicopter_rotor_shaft = NULL;
 object_t* _helicopter_tail_rotor_shaft = NULL;
+
+object_t* ground = NULL;
+
+light_t lights[8];
 
 transform_t get_transform(GLfvector_t translation, GLfvector_t rotation, GLfvector_t scale);
 object_t* create_object(transform_t transform, void (*draw)());
@@ -212,6 +294,7 @@ scenegraph_node_t* create_node(object_t* obj);
 void append_child(scenegraph_node_t* parent, scenegraph_node_t* child);
 
 GLfvector_t get_translation(GLfloat m[16]);
+GLfvector_t get_scale(GLfloat m[16]);
 
 #define DRAW_STRING(x, y, ...) { unsigned char str[256]; snprintf(str, sizeof str, __VA_ARGS__); drawString(x, y, str); }
 
@@ -285,6 +368,7 @@ void display(void)
 	float camZ = helicopter_position.z + cos((helicopterHeading) * 3.1415f / 180.0f) * 10.0f;
 
 	glLoadIdentity();
+	drawSkybox();
 	
 	if(orbitCamera)
 	{
@@ -314,13 +398,14 @@ void display(void)
 		dx = 0;
 		dy = 0;
 
-		DRAW_STRING(0, 100, "Camera Yaw: %f Camera Pitch: %f", cameraYaw, cameraPitch);
+		DRAW_STRING(viewport_width / 2, 190, "Camera Yaw: %f Camera Pitch: %f", cameraYaw, cameraPitch);
 	}
 	else
 	{
 		gluLookAt(camX, helicopter_position.y + 5.0f, camZ, helicopter_position.x, helicopter_position.y, helicopter_position.z, 0, 1, 0);
 	}
 
+	drawLights();
 	drawScene();
 }
 
@@ -334,7 +419,7 @@ void reshape(int width, int height)
 
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
-	gluPerspective(89, (float)width / (float)height, 0.1, 1000.0);
+	gluPerspective(89, (float)width / (float)height, 0.1, 9000.0);
 	glPushMatrix();
 
 	glMatrixMode(GL_MODELVIEW);
@@ -577,7 +662,7 @@ void idle(void)
  */
 void init(void)
 {
-	glClearColor(0.0f, 1.0f, 1.0f, 1.0f);
+	glClearColor(0.67f, 0.82f, 0.85f, 1.0f);
 
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
@@ -592,6 +677,13 @@ void init(void)
 	
 	// Anything that relies on lighting or specifies normals must be initialised after initLights.
 	initScene();
+
+	glEnable(GL_FOG);
+
+	GLfloat fogColor[4] = { 0.67, 0.82, 0.85, 0.2 };
+	glFogfv(GL_FOG_COLOR, fogColor);
+	glFogf(GL_FOG_MODE, GL_EXP);
+	glFogf(GL_FOG_DENSITY, 0.0005);
 }
 
 /*
@@ -645,7 +737,14 @@ void think(void)
 	*/
 
 	// Update helicopter altitude
-	float altitude = sqrtf(helicopterRotorSpeed) * (log(helicopterRotorSpeed / 100 + 1) / log(10)) - 10.0f;
+	GLfvector_t helicopter_position = get_translation(_helicopter->transform.m);
+
+	GLfvector_t ground_scale = get_scale(ground->transform.m);
+	float ground_height = getGroundHeight(helicopter_position.x / ground_scale.x, helicopter_position.z / ground_scale.z) * ground_scale.y + 1.0f;
+
+	printf("SCALE: %f %f %f; HEIGHT: %f\n", ground_scale.x, ground_scale.y, ground_scale.z, ground_height);
+
+	float altitude = ((helicopterRotorSpeed * helicopterRotorSpeed) / 1000.0f) - 20.0f;
 
 	if (altitude < 0.0f)
 	{
@@ -655,12 +754,10 @@ void think(void)
 	{
 		if (altitude >= 0.0f)
 		{
-			GLfvector_t helicopter_position = get_translation(_helicopter->transform.m);
-
 			glPushMatrix();
 			glLoadMatrixf(_helicopter->transform.m);
 			glTranslatef(0, -helicopter_position.y, 0);
-			glTranslatef(0, altitude, 0);
+			glTranslatef(0, ground_height + altitude, 0);
 			glGetFloatv(GL_MODELVIEW_MATRIX, _helicopter->transform.m);
 			glPopMatrix();
 		}
@@ -691,6 +788,25 @@ void think(void)
 	glGetFloatv(GL_MODELVIEW_MATRIX, _helicopter_tail_rotor_shaft->transform.m);
 	glPopMatrix();
 
+	// Update flood light
+	light_t* flood_light = &lights[1];
+
+	if (!flood_light->enabled)
+	{
+		flood_light->enabled = 1;
+		flood_light->dirty = 1;
+	}
+
+	flood_light->position = helicopter_position;
+
+	flood_light->color = create_glfvector3(1, 1, 1);
+	flood_light->intensity = 10.0;
+	flood_light->type = spot;
+
+	GLfvector_t floodLightDir = create_glfvector3(0, -1, 0);
+	flood_light->spotDirection = floodLightDir;
+	flood_light->spotCutoffAngle = 30;
+
 	/*
 		Keyboard motion handler: complete this section to make your "player-controlled"
 		object respond to keyboard input.
@@ -700,7 +816,7 @@ void think(void)
 
 		GLfvector_t helicopter_position = get_translation(_helicopter->transform.m);
 
-		if (helicopter_position.y > 0.0f)
+		if (helicopter_position.y > ground_height)
 		{
 			glPushMatrix();
 			glLoadMatrixf(_helicopter->transform.m);
@@ -725,11 +841,11 @@ void think(void)
 
 		GLfvector_t helicopter_position = get_translation(_helicopter->transform.m);
 
-		if (helicopter_position.y > 0.0f)
+		if (helicopter_position.y > ground_height)
 		{
 			glPushMatrix();
 			glLoadMatrixf(_helicopter->transform.m);
-			glTranslatef(0, 0, -keyboardMotion.Surge * FRAME_TIME_SEC * 10);
+			glTranslatef(0, 0, -keyboardMotion.Surge * FRAME_TIME_SEC * 66);
 			glGetFloatv(GL_MODELVIEW_MATRIX, _helicopter->transform.m);
 			glPopMatrix();
 		}
@@ -738,11 +854,11 @@ void think(void)
 		/* TEMPLATE: Move (strafe) your object left if .Sway < 0, or right if .Sway > 0 */
 		GLfvector_t helicopter_position = get_translation(_helicopter->transform.m);
 
-		if (helicopter_position.y > 0.0f)
+		if (helicopter_position.y > ground_height)
 		{
 			glPushMatrix();
 			glLoadMatrixf(_helicopter->transform.m);
-			glTranslatef(keyboardMotion.Sway * FRAME_TIME_SEC * 10, 0, 0);
+			glTranslatef(keyboardMotion.Sway * FRAME_TIME_SEC * 66, 0, 0);
 			glGetFloatv(GL_MODELVIEW_MATRIX, _helicopter->transform.m);
 			glPopMatrix();
 		}
@@ -763,42 +879,110 @@ void think(void)
 void initLights(void)
 {
 	// Simple lighting setup
-	GLfloat globalAmbient[] = { 0.4f, 0.4f, 0.4f, 1 };
-	GLfloat lightPosition[] = { 5.0f, 5.0f, 5.0f, 1.0f };
-	GLfloat ambientLight[] = { 0, 0, 0, 1 };
-	GLfloat diffuseLight[] = { 1, 1, 1, 1 };
-	GLfloat specularLight[] = { 1, 1, 1, 1 };
+	GLfloat globalAmbient[] = { 0.2f, 0.2f, 0.2f, 1 };
+	//GLfloat lightPosition[] = { 5.0f, 5.0f, 5.0f, 1.0f };
+	//GLfloat ambientLight[] = { 0, 0, 0, 1 };
+	//GLfloat diffuseLight[] = { 1, 1, 1, 1 };
+	//GLfloat specularLight[] = { 1, 1, 1, 1 };
 	
 	// Configure global ambient lighting.
 	glLightModelfv(GL_LIGHT_MODEL_AMBIENT, globalAmbient);
 	
 	// Configure Light 0.
-	glLightfv(GL_LIGHT0, GL_POSITION, lightPosition);
-	glLightfv(GL_LIGHT0, GL_AMBIENT, ambientLight);
-	glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuseLight);
-	glLightfv(GL_LIGHT0, GL_SPECULAR, specularLight);
+	//glLightfv(GL_LIGHT0, GL_POSITION, lightPosition);
+	//glLightfv(GL_LIGHT0, GL_AMBIENT, ambientLight);
+	//glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuseLight);
+	//glLightfv(GL_LIGHT0, GL_SPECULAR, specularLight);
 	
 	// Enable lighting
 	glEnable(GL_LIGHTING);
-	glEnable(GL_LIGHT0);
+	//glEnable(GL_LIGHT0);
 	
 	// Make GL normalize the normal vectors we supply.
 	glEnable(GL_NORMALIZE);
 	
 	// Enable use of simple GL colours as materials.
-	glEnable(GL_COLOR_MATERIAL);
+	//glEnable(GL_COLOR_MATERIAL);
+}
+
+void drawLights(void)
+{
+	for (int i = 0; i < (sizeof(lights) / sizeof(lights[0])); i++)
+	{
+		light_t* light = &lights[i];
+
+		if (light->dirty)
+		{
+			updateLightState(light, i);
+			light->dirty = 0;
+		}
+
+		if (!light->enabled)
+		{
+			continue;
+		}
+
+		GLfloat lightPosition[] = {light->position.x, light->position.y, light->position.z, (float)light->type};
+		GLfloat lightDiffuseColor[] = { light->color.x * light->intensity, light->color.y * light->intensity, light->color.z * light->intensity, 1 };
+
+		GLfloat lightAmbientColor[] = { 0, 0, 0, 1 };
+		GLfloat lightSpecularColor[] = { 1, 1, 1, 1 };
+
+		glLightfv(GL_LIGHT0 + i, GL_POSITION, lightPosition);
+		glLightfv(GL_LIGHT0 + i, GL_AMBIENT, lightAmbientColor);
+		glLightfv(GL_LIGHT0 + i, GL_DIFFUSE, lightDiffuseColor);
+		glLightfv(GL_LIGHT0 + i, GL_SPECULAR, lightSpecularColor);
+
+		switch (light->type)
+		{
+		case directional:
+			break;
+		case spot:
+		{
+			GLfloat lightSpotDirection[] = { light->spotDirection.x, light->spotDirection.y, light->spotDirection.z };
+			GLfloat lightTheta = light->spotCutoffAngle;
+			glLightfv(GL_LIGHT0 + i, GL_SPOT_DIRECTION, lightSpotDirection);
+			glLightf(GL_LIGHT0 + i, GL_SPOT_CUTOFF, lightTheta);
+			glLightf(GL_LIGHT0 + i, GL_LINEAR_ATTENUATION, 0.01);
+			break;
+		}
+		}
+	}
+}
+
+void updateLightState(light_t* light, int index)
+{
+	if (light->enabled)
+	{
+		glEnable(GL_LIGHT0 + index);
+	}
+	else
+	{
+		glDisable(GL_LIGHT0 + index);
+	}
 }
 
 /******************************************************************************/
 
 void initScene(void)
 {
+	scenegraph_node_t* ocean = create_node(
+		create_object(
+			get_transform(
+				create_glfvector3(0, 0, 0),
+				create_glfvector3(0, 0, 0),
+				create_glfvector3(100, 1, 100)
+			),
+			drawOcean
+		)
+	);
+
 	scenegraph_node_t* grid = create_node(
 		create_object(
 			get_transform(
-				create_glfvector3(0, -1.0, 0),
 				create_glfvector3(0, 0, 0),
-				create_glfvector3(1, 1, 1)
+				create_glfvector3(0, 0, 0),
+				create_glfvector3(100, 20, 100)
 			),
 			drawGrid
 		)
@@ -854,6 +1038,7 @@ void initScene(void)
 
 	scene_graph = create_node(create_object(get_transform(create_glfvector3(0, 0, 0), create_glfvector3(0, 0, 0), create_glfvector3(1, 1, 1)), NULL));
 	append_child(scene_graph, grid);
+	append_child(scene_graph, ocean);
 	append_child(scene_graph, helicopter);
 	append_child(helicopter, helicopter_body);
 	append_child(helicopter_body, helicopter_tail);
@@ -863,6 +1048,23 @@ void initScene(void)
 	_helicopter = helicopter->obj;
 	_helicopter_rotor_shaft = helicopter_rotor->obj;
 	_helicopter_tail_rotor_shaft = helicopter_tail_rotor->obj;
+
+	ground = grid->obj;
+
+	light_t* sun_light = &lights[0];
+	sun_light->enabled = 1;
+	sun_light->color = create_glfvector3(1, 1, 1);
+	sun_light->intensity = 0.5;
+	sun_light->type = directional;
+	sun_light->position = create_glfvector3(5, 5, 0);
+	sun_light->dirty = 1;
+
+	loadImage("grass.ppm", &groundTextureWidth, &groundTextureHeight, &groundTexture);
+
+	for (int i = 0; i < 3; i++)
+	{
+		loadImage(skyboxTextureFilenames[i], &skyboxTextureWidths[i], &skyboxTextureHeights[i], &skyboxTextures[i]);
+	}
 }
 
 transform_t get_transform(GLfvector_t translation, GLfvector_t rotation, GLfvector_t scale)
@@ -922,6 +1124,7 @@ scenegraph_node_t* create_node(object_t* obj)
 	if (node != NULL)
 	{
 		node->obj = obj;
+		node->displayList = NULL;
 		node->children = NULL;
 		node->children_count = 0;
 	}
@@ -964,6 +1167,15 @@ GLfvector_t get_translation(GLfloat m[16])
 	return create_glfvector3(m[12], m[13], m[14]);
 }
 
+GLfvector_t get_scale(GLfloat m[16])
+{
+	float x = sqrtf(m[0] * m[0] + m[4] * m[4] + m[8] * m[8]);
+	float y = sqrtf(m[1] * m[1] + m[5] * m[5] + m[9] * m[9]);
+	float z = sqrtf(m[2] * m[2] + m[6] * m[6] + m[10] * m[10]);
+
+	return create_glfvector3(x, y, z);
+}
+
 void drawScene(void)
 {
 	// Draw scene graph
@@ -979,6 +1191,14 @@ void drawScene(void)
 
 	DRAW_STRING(0, 60, "Helicopter Rotor Speed:");
 	DRAW_STRING(0, 75, "%f RPM", helicopterRotorSpeed);
+
+	DRAW_STRING(0, 100, "Controls:");
+	DRAW_STRING(0, 115, "UP/DOWN ARROWS: Increase (move up) or decrease (move down) altitude.");
+	DRAW_STRING(0, 130, "LEFT/RIGHT ARROWS: Turn left/right.");
+	DRAW_STRING(0, 145, "W/S: Move forward/backward.");
+	DRAW_STRING(0, 160, "A/D: Strafe left/right.");
+	DRAW_STRING(0, 175, "L: Toggle wireframe mode.");
+	DRAW_STRING(0, 190, "C: Toggle camera mode.");
 }
 
 void drawNode(scenegraph_node_t* node)
@@ -992,7 +1212,7 @@ void drawNode(scenegraph_node_t* node)
 
 	if (obj->draw != NULL)
 	{
-		obj->draw();
+		obj->draw(&node->displayList);
 	}
 
 	for (size_t index = 0; index < children_count; index++)
@@ -1004,27 +1224,53 @@ void drawNode(scenegraph_node_t* node)
 	glPopMatrix();
 }
 
-void drawGrid(void)
+float getGroundHeight(float x, float z)
 {
-	for (int x = -GRID_WIDTH / 2; x < GRID_WIDTH / 2; x++)
+	return (perlin(x / GRID_WIDTH, 0.5, z / GRID_WIDTH) + 0.25) * 100;
+}
+
+void drawPlane(int width, int height, int usePerlin)
+{
+	for (int x = -width / 2; x < width / 2; x++)
 	{
 		glPushMatrix();
 		glTranslatef(x, 0, 0);
 
-		for (int z = -GRID_HEIGHT / 2; z < GRID_HEIGHT / 2; z++)
+		for (int z = -height / 2; z < height / 2; z++)
 		{
 			glPushMatrix();
 			glTranslatef(0, 0, z);
 
 			glBegin(GL_TRIANGLE_FAN);
 
-			glColor4f(0.0f, 1.0f, 0.0f, 1.0f);
-			glVertex3f(0.0f, 0.0f, 0.0f);
-			glVertex3f(1.0f, 0.0f, 0.0f);
-			glVertex3f(1.0f, 0.0f, 1.0f);
-			glVertex3f(1.0f, 0.0f, 1.0f);
-			glVertex3f(0.0f, 0.0f, 1.0f);
-			glVertex3f(0.0f, 0.0f, 0.0f);
+			double y0 = 0, y1 = 0, y2 = 0, y3 = 0;
+
+			if (usePerlin)
+			{
+				y0 = getGroundHeight(x, z);
+				y1 = getGroundHeight(x + 1, z);
+				y2 = getGroundHeight(x, z + 1);
+				y3 = getGroundHeight(x + 1, z + 1);
+			}
+
+			glNormal3f(0, 1, 0);
+			glTexCoord2f(0, 0);
+			glVertex3f(0.0f, y0, 0.0f);
+			glNormal3f(0, 1, 0);
+			glTexCoord2f(1, 0);
+			glVertex3f(1.0f, y1, 0.0f);
+			glNormal3f(0, 1, 0);
+			glTexCoord2f(1, 1);
+			glVertex3f(1.0f, y3, 1.0f);
+			glNormal3f(0, 1, 0);
+			glTexCoord2f(1, 1);
+			glVertex3f(1.0f, y3, 1.0f);
+			glNormal3f(0, 1, 0);
+			glTexCoord2f(0, 1);
+			glVertex3f(0.0f, y2, 1.0f);
+			glNormal3f(0, 1, 0);
+			glTexCoord2f(0, 0);
+			glVertex3f(0.0f, y0, 0.0f);
 
 			glEnd();
 
@@ -1035,20 +1281,87 @@ void drawGrid(void)
 	}
 }
 
-void drawHelicopterBody(void)
+void drawGrid(int** displayList)
 {
-	glColor4f(1.0, 0.0, 0.0, 1.0);
+	GLfloat diffuseMat[] = { 0.0, 1.0, 0.0, 1.0 };
+	GLfloat ambientMat[] = { 0.0, 0.0, 0.0, 1.0 };
+
+	GLfloat shine = 0.5;
+
+	//glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuseMat);
+	//glMaterialfv(GL_FRONT, GL_AMBIENT, ambientMat);
+	//glMaterialf(GL_FRONT, GL_SHININESS, shine);
+
+	glEnable(GL_TEXTURE_2D);
+
+	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+
+	gluBuild2DMipmaps(GL_TEXTURE_2D, 3, groundTextureWidth, groundTextureHeight, GL_RGB, GL_UNSIGNED_BYTE, groundTexture);
+
+	if (*displayList == NULL)
+	{
+		*displayList = glGenLists(1);
+
+		glNewList(*displayList, GL_COMPILE);
+
+		drawPlane(GRID_WIDTH, GRID_HEIGHT, 1);
+
+		glEndList();
+	}
+
+	glCallList(*displayList);
+
+	glDisable(GL_TEXTURE_2D);
+}
+
+void drawOcean(int** displayList)
+{
+	GLfloat diffuseMat[] = { 0.0, 0.1, 1.0, 1.0 };
+	GLfloat ambientMat[] = { 0.0, 0.0, 0.0, 1.0 };
+
+	GLfloat shine = 0.1;
+
+	glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuseMat);
+	glMaterialfv(GL_FRONT, GL_AMBIENT, ambientMat);
+	glMaterialf(GL_FRONT, GL_SHININESS, shine);
+
+	if (*displayList == NULL)
+	{
+		*displayList = glGenLists(1);
+
+		glNewList(*displayList, GL_COMPILE);
+
+		drawPlane(GRID_WIDTH, GRID_HEIGHT, 0);
+
+		glEndList();
+	}
+
+	glCallList(*displayList);
+}
+
+void drawHelicopterBody(int** displayList)
+{
+	GLfloat diffuseMat[] = {1.0, 0.0, 0.0, 1.0};
+
+	glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuseMat);
 	glutSolidSphere(1.0, 20, 20);
 }
 
-void drawHelicopterTail(void)
+void drawHelicopterTail(int** displayList)
 {
-	glColor4f(1.0, 1.0, 0.0, 1.0);
+	GLfloat diffuseMat[] = { 1.0, 1.0, 0.0, 1.0 };
+
+	glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuseMat);
 	glutSolidCylinder(1.0, 1.0, 20, 20);
 }
 
-void drawHelicopterRotor(void)
+void drawHelicopterRotor(int** displayList)
 {
+	GLfloat diffuseMat[] = { 1.0, 1.0, 1.0, 1.0 };
+
+	glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuseMat);
+
 	glPushMatrix();
 	glTranslatef(0, 0.1, 0);
 	glRotatef(90, 1, 0, 0);
@@ -1080,6 +1393,69 @@ void drawHelicopterRotor(void)
 	glDisableClientState(GL_VERTEX_ARRAY);
 }
 
+double perlin(double x, double y, double z)
+{
+	int X = (int)floor(x) & 255;
+	int Y = (int)floor(y) & 255;
+	int Z = (int)floor(z) & 255;
+
+	x -= floor(x);
+	y -= floor(y);
+	z -= floor(z);
+
+	double u = fade(x);
+	double v = fade(y);
+	double w = fade(z);
+
+	int A = p[X] + Y;
+	int AA = p[A] + Z;
+	int AB = p[A + 1] + Z;
+	int B = p[X + 1] + Y;
+	int BA = p[B] + Z;
+	int BB = p[B + 1] + Z;
+
+	double ug0 = grad(p[AA], x, y, z);
+	double ug1 = grad(p[BA], x - 1, y, z);
+	double lug0g1 = lerp(u, ug0, ug1);
+
+	double ug2 = grad(p[AB], x, y - 1, z);
+	double ug3 = grad(p[BB], x - 1, y - 1, z);
+	double lug2g3 = lerp(u, ug2, ug3);
+
+	double lvug0g1g2g3 = lerp(v, lug0g1, lug2g3);
+
+	double ug4 = grad(p[AA + 1], x, y, z - 1);
+	double ug5 = grad(p[BA + 1], x - 1, y, z - 1);
+	double lug4g5 = lerp(u, ug4, ug5);
+
+	double ug6 = grad(p[AB + 1], x, y - 1, z - 1);
+	double ug7 = grad(p[BB + 1], x - 1, y - 1, z - 1);
+	double lug6g7 = lerp(u, ug6, ug7);
+
+	double lvug4g5g6g7 = lerp(v, lug4g5, lug6g7);
+
+	return lerp(w, lvug0g1g2g3, lvug4g5g6g7);
+}
+
+double fade(double t)
+{
+	return t * t * t * (t * (t * 6 - 15) + 10);
+}
+
+double lerp(double t, double a, double b)
+{
+	return a + t * (b - a);
+}
+
+double grad(int hash, double x, double y, double z)
+{
+	int h = hash & 15;
+	double u = h < 8 ? x : y;
+	double v = h < 4 ? y : (h == 12 || h == 14 ? x : z);
+
+	return ((h & 1) == 0 ? u : -u) + ((h & 2) == 0 ? v : -v);
+}
+
 void drawString(float x, float y, const unsigned char* string)
 {
 	glMatrixMode(GL_PROJECTION);
@@ -1105,4 +1481,235 @@ void drawString(float x, float y, const unsigned char* string)
 	glPopMatrix();
 
 	glMatrixMode(GL_MODELVIEW);
+}
+
+/*
+ * Loads a PPM image
+ */
+void loadImage(const char* filename, int* imageWidth, int* imageHeight, GLubyte** imageData)
+{
+	// the ID of the image file
+	FILE* fileID;
+
+	// maxValue
+	int  maxValue;
+
+	// total number of pixels in the image
+	int  totalPixels;
+
+	// temporary character
+	char tempChar;
+
+	// counter variable for the current pixel in the image
+	int i;
+
+	// array for reading in header information
+	char headerLine[100];
+
+	// if the original values are larger than 255
+	float RGBScaling;
+
+	// temporary variables for reading in the red, green and blue data of each pixel
+	char red, green, blue;
+
+	int filePos = 0;
+	int bufferPos;
+
+	// open the image file for reading - note this is hardcoded would be better to provide a parameter which
+	//is the file name. There are 3 PPM files you can try out mount03, sky08 and sea02.
+	errno_t err = fopen_s(&fileID, filename, "r");
+
+	if (err != 0)
+	{
+		printf("Failed to load image %s.", filename);
+		exit(0);
+	}
+
+	fseek(fileID, 0, SEEK_END);
+	long fileSize = ftell(fileID);
+	rewind(fileID);
+
+	char* buffer = calloc(1, fileSize);
+	fread(buffer, fileSize, 1, fileID);
+	fclose(fileID);
+
+	// read in the first header line
+	//    - "%[^\n]"  matches a string of all characters not equal to the new line character ('\n')
+	//    - so we are just reading everything up to the first line break
+	sscanf_s(buffer, "%[^\n] %n", headerLine, sizeof(headerLine), &bufferPos);
+	filePos += bufferPos;
+
+	// make sure that the image begins with 'P3', which signifies a PPM file
+	if ((headerLine[0] != 'P') || (headerLine[1] != '6'))
+	{
+		printf("This is not a PPM file!\n %c", headerLine[1]);
+		exit(0);
+	}
+
+	// we have a PPM file
+	printf("This is a PPM file\n");
+
+	// read in the first character of the next line
+	sscanf_s(&buffer[filePos], "%c%n", &tempChar, sizeof(tempChar), &bufferPos);
+	filePos += bufferPos;
+
+	// while we still have comment lines (which begin with #)
+	while (tempChar == '#')
+	{
+		// read in the comment
+		sscanf_s(&buffer[filePos], "%[^\n] %n", headerLine, sizeof(headerLine), &bufferPos);
+		filePos += bufferPos;
+
+		// print the comment
+		printf("%s\n", headerLine);
+
+		// read in the first character of the next line
+		sscanf_s(&buffer[filePos], "%c%n", &tempChar, sizeof(tempChar), &bufferPos);
+	}
+
+	// read in the image hieght, width and the maximum value
+	sscanf_s(&buffer[filePos], "%d %d %d%n", imageWidth, imageHeight, &maxValue, &bufferPos);
+	filePos += bufferPos;
+
+	sscanf_s(&buffer[filePos], "%c%n", &tempChar, sizeof(tempChar), &bufferPos);
+	filePos += bufferPos;
+
+	// print out the information about the image file
+	printf("%d rows  %d columns  max value= %d\n", *imageHeight, *imageWidth, maxValue);
+
+	// compute the total number of pixels in the image
+	totalPixels = (*imageWidth) * (*imageHeight);
+
+	// allocate enough memory for the image  (3*) because of the RGB data
+	*imageData = calloc(totalPixels, 3 * sizeof(GLubyte));
+
+	// determine the scaling for RGB values
+	RGBScaling = 255.0 / maxValue;
+
+
+	// if the maxValue is 255 then we do not need to scale the 
+	//    image data values to be in the range or 0 to 255
+	if (maxValue == 255)
+	{
+		for (i = 0; i < totalPixels; i++)
+		{
+			// read in the current pixel from the file
+			red = buffer[filePos++];
+			green = buffer[filePos++];
+			blue = buffer[filePos++];
+
+			// store the red, green and blue data of the current pixel in the data array
+			(*imageData)[3 * totalPixels - 3 * i - 3] = red;
+			(*imageData)[3 * totalPixels - 3 * i - 2] = green;
+			(*imageData)[3 * totalPixels - 3 * i - 1] = blue;
+
+			//(*imageData)[3 * i] = red;
+			//(*imageData)[(3 * i) + 1] = green;
+			//(*imageData)[(3 * i) + 2] = blue;
+		}
+	}
+	else  // need to scale up the data values
+	{
+		for (i = 0; i < totalPixels; i++)
+		{
+			// read in the current pixel from the file
+			fscanf_s(fileID, "%d %d %d", &red, &green, &blue);
+
+			// store the red, green and blue data of the current pixel in the data array
+			(*imageData)[3 * totalPixels - 3 * i - 3] = red * RGBScaling;
+			(*imageData)[3 * totalPixels - 3 * i - 2] = green * RGBScaling;
+			(*imageData)[3 * totalPixels - 3 * i - 1] = blue * RGBScaling;
+		}
+	}
+
+
+	// close the image file
+	fclose(fileID);
+}
+
+void drawSkybox(void)
+{
+	glDisable(GL_FOG);
+	glDisable(GL_LIGHTING);
+	glDepthMask(GL_FALSE);
+
+	glEnable(GL_TEXTURE_2D);
+
+	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+
+	const float cubeVertices[][6][3] =
+	{
+		{
+			{-1.0, -1.0, -0.5},
+			{-1.0, 1.0, -0.5},
+			{1.0, -1.0, -0.5},
+			{1.0, -1.0, -0.5},
+			{1.0, 1.0, -0.5},
+			{-1.0, 1.0, -0.5},
+		},
+		{
+			{-1.0, -1.0, 0.5},
+			{-1.0, 1.0, 0.5},
+			{-1.0, -1.0, -0.5},
+			{-1.0, -1.0, -0.5},
+			{-1.0, 1.0, -0.5},
+			{-1.0, 1.0, 0.5},
+		},
+		{
+			{1.0, -1.0, -0.5},
+			{1.0, 1.0, -0.5},
+			{1.0, -1.0, 0.5},
+			{1.0, -1.0, 0.5},
+			{1.0, 1.0, 0.5},
+			{1.0, 1.0, -0.5},
+		}
+	};
+
+	const float cubeTexCoords[][6][2] =
+	{
+		{
+			{0, 0},
+			{0, 1},
+			{1, 0},
+			{1, 0},
+			{1, 1},
+			{0, 1},
+		},
+		{
+			{0, 0},
+			{0, 1},
+			{1, 0},
+			{1, 0},
+			{1, 1},
+			{0, 1}
+		},
+		{
+			{0, 0},
+			{0, 1},
+			{1, 0},
+			{1, 0},
+			{1, 1},
+			{0, 1}
+		}
+	};
+
+	for (int i = 0; i < 3; i++)
+	{
+		glTexImage2D(GL_TEXTURE_2D, 0, 3, skyboxTextureWidths[i], skyboxTextureHeights[i], 0, GL_RGB, GL_UNSIGNED_BYTE, skyboxTextures[i]);
+
+		glEnableClientState(GL_VERTEX_ARRAY);
+		glEnableClientState(GL_TEXTURE_COORD_ARRAY_EXT);
+		glTexCoordPointer(2, GL_FLOAT, 0, &cubeTexCoords[i]);
+		glVertexPointer(3, GL_FLOAT, 0, &cubeVertices[i]);
+		glDrawArrays(GL_TRIANGLES, 0, sizeof(cubeVertices[i]) / sizeof(cubeVertices[i][0]));
+		glDisableClientState(GL_TEXTURE_COORD_ARRAY_EXT);
+		glDisableClientState(GL_VERTEX_ARRAY);
+	}
+
+	glDisable(GL_TEXTURE_2D);
+
+	glDepthMask(GL_TRUE);
+	glEnable(GL_LIGHTING);
+	glEnable(GL_FOG);
 }
