@@ -107,6 +107,7 @@ motionstate4_t keyboardMotion = { MOTION_NONE, MOTION_NONE, MOTION_NONE, MOTION_
 #define KEY_MOVE_RIGHT		'd'
 #define KEY_RENDER_FILL		'l'
 #define KEY_CAMERA			'c'
+#define KEY_FLOODLIGHT		'f'
 #define KEY_EXIT			27 // Escape key.
 
 // Define all GLUT special keys used for input (add any new key definitions here).
@@ -151,6 +152,11 @@ void drawOcean(int** displayList);
 void drawHelicopterBody(int** displayList);
 void drawHelicopterTail(int** displayList);
 void drawHelicopterRotor(int** displayList);
+void drawHelicopterLeg(int** displayList);
+void drawTreeLog(int** displayList);
+void drawTreeLeaves(int** displayList);
+void drawBuilding(int** displayList);
+void drawWindTurbine(int** displayList);
 
 float getGroundHeight(float x, float z);
 
@@ -228,6 +234,12 @@ int renderFillEnabled = 1;
 
 #define GRID_WIDTH 100
 #define GRID_HEIGHT 100
+#define GRID_SQUARE_SCALE 100
+#define GRID_HEIGHT_SCALE 20
+
+#define TREE_COUNT 1500 // Lower if performance is being affected.
+#define BUILDING_COUNT 100
+#define WIND_TURBINE_COUNT 20
 
 typedef struct
 {
@@ -283,6 +295,7 @@ object_t* _helicopter_rotor_shaft = NULL;
 object_t* _helicopter_tail_rotor_shaft = NULL;
 
 object_t* ground = NULL;
+object_t** wind_turbine_rotors[WIND_TURBINE_COUNT];
 
 light_t lights[8];
 
@@ -476,6 +489,13 @@ void keyPressed(unsigned char key, int x, int y)
 		orbitCamera = !orbitCamera;
 		glutSetCursor(orbitCamera ? GLUT_CURSOR_NONE : GLUT_CURSOR_INHERIT);
 		break;
+	case KEY_FLOODLIGHT:
+	{
+		light_t* flood_light = &lights[1];
+		flood_light->enabled = !flood_light->enabled;
+		flood_light->dirty = 1;
+		break;
+	}
 	case KEY_EXIT:
 		exit(0);
 		break;
@@ -742,8 +762,6 @@ void think(void)
 	GLfvector_t ground_scale = get_scale(ground->transform.m);
 	float ground_height = getGroundHeight(helicopter_position.x / ground_scale.x, helicopter_position.z / ground_scale.z) * ground_scale.y + 1.0f;
 
-	printf("SCALE: %f %f %f; HEIGHT: %f\n", ground_scale.x, ground_scale.y, ground_scale.z, ground_height);
-
 	float altitude = ((helicopterRotorSpeed * helicopterRotorSpeed) / 1000.0f) - 20.0f;
 
 	if (altitude < 0.0f)
@@ -791,21 +809,7 @@ void think(void)
 	// Update flood light
 	light_t* flood_light = &lights[1];
 
-	if (!flood_light->enabled)
-	{
-		flood_light->enabled = 1;
-		flood_light->dirty = 1;
-	}
-
 	flood_light->position = helicopter_position;
-
-	flood_light->color = create_glfvector3(1, 1, 1);
-	flood_light->intensity = 10.0;
-	flood_light->type = spot;
-
-	GLfvector_t floodLightDir = create_glfvector3(0, -1, 0);
-	flood_light->spotDirection = floodLightDir;
-	flood_light->spotCutoffAngle = 30;
 
 	/*
 		Keyboard motion handler: complete this section to make your "player-controlled"
@@ -866,6 +870,17 @@ void think(void)
 	if (keyboardMotion.Heave != MOTION_NONE) {
 		/* TEMPLATE: Move your object down if .Heave < 0, or up if .Heave > 0 */
 		helicopterRotorSpeed += keyboardMotion.Heave * 80.0f * FRAME_TIME_SEC;
+	}
+
+	for (int i = 0; i < sizeof(wind_turbine_rotors) / sizeof(wind_turbine_rotors[0]); i++)
+	{
+		object_t* wind_turbine_rotor = wind_turbine_rotors[i];
+
+		glPushMatrix();
+		glLoadMatrixf(wind_turbine_rotor->transform.m);
+		glRotatef(360.0f * (60.0f / 60.0f) * FRAME_TIME_SEC, 0, 1, 0);
+		glGetFloatv(GL_MODELVIEW_MATRIX, wind_turbine_rotor->transform.m);
+		glPopMatrix();
 	}
 }
 
@@ -982,7 +997,7 @@ void initScene(void)
 			get_transform(
 				create_glfvector3(0, 0, 0),
 				create_glfvector3(0, 0, 0),
-				create_glfvector3(100, 20, 100)
+				create_glfvector3(GRID_SQUARE_SCALE, GRID_HEIGHT_SCALE, GRID_SQUARE_SCALE)
 			),
 			drawGrid
 		)
@@ -1028,11 +1043,33 @@ void initScene(void)
 	scenegraph_node_t* helicopter_tail_rotor = create_node(
 		create_object(
 			get_transform(
-				create_glfvector3(0.0f, 0.5f, 5.0f),
+				create_glfvector3(-1.0f, 0.0f, 0.95f),
 				create_glfvector4(0, 0, 1, 90),
 				create_glfvector3(2, 2, 0.185f)
 			),
 			drawHelicopterRotor
+		)
+	);
+
+	scenegraph_node_t* helicopter_leg_l = create_node(
+		create_object(
+			get_transform(
+				create_glfvector3(-0.5f, -0.5f, 0.0f),
+				create_glfvector4(1, 0, 0, 90),
+				create_glfvector3(1, 1, 3)
+			),
+			drawHelicopterLeg
+		)
+	);
+
+	scenegraph_node_t* helicopter_leg_r = create_node(
+		create_object(
+			get_transform(
+				create_glfvector3(0.5f, -0.5f, 0.0f),
+				create_glfvector4(1, 0, 0, 90),
+				create_glfvector3(1, 1, 3)
+			),
+			drawHelicopterLeg
 		)
 	);
 
@@ -1044,6 +1081,8 @@ void initScene(void)
 	append_child(helicopter_body, helicopter_tail);
 	append_child(helicopter_tail, helicopter_tail_rotor);
 	append_child(helicopter, helicopter_rotor);
+	append_child(helicopter_body, helicopter_leg_l);
+	append_child(helicopter_body, helicopter_leg_r);
 
 	_helicopter = helicopter->obj;
 	_helicopter_rotor_shaft = helicopter_rotor->obj;
@@ -1051,13 +1090,181 @@ void initScene(void)
 
 	ground = grid->obj;
 
+	for (int i = 0; i < TREE_COUNT; i++)
+	{
+		GLfvector_t ground_scale = get_scale(ground->transform.m);
+
+		float minX = -(GRID_WIDTH / 2) * ground_scale.x;
+		float maxX = (GRID_WIDTH / 2) * ground_scale.x;
+
+		float minZ = -(GRID_HEIGHT / 2) * ground_scale.z;
+		float maxZ = (GRID_HEIGHT / 2) * ground_scale.z;
+
+		float x = minX + ((maxX - minX) * ((float)rand() / (float)RAND_MAX));
+		float z = minZ + ((maxZ - minZ) * (float)rand() / (float)RAND_MAX);
+		float y = getGroundHeight(x / ground_scale.x, z / ground_scale.z) * ground_scale.y + 20.0f;
+
+		if (y < 50.0f)
+		{
+			i--;
+			continue;
+		}
+
+		scenegraph_node_t* tree = create_node(
+			create_object(
+				get_transform(
+					create_glfvector3(x, y, z),
+					create_glfvector3(0, 0, 0),
+					create_glfvector3(1, 1, 1)
+				),
+				NULL
+			)
+		);
+
+		scenegraph_node_t* tree_log = create_node(
+			create_object(
+				get_transform(
+					create_glfvector3(0, 0, 0),
+					create_glfvector4(1, 0, 0, 90),
+					create_glfvector3(1, 2, 1)
+				),
+				drawTreeLog
+			)
+		);
+
+		scenegraph_node_t* tree_leaves = create_node(
+			create_object(
+				get_transform(
+					create_glfvector3(0, 30, 0),
+					create_glfvector3(0, 0, 0),
+					create_glfvector3(20, 40, 20)
+				),
+				drawTreeLeaves
+			)
+		);
+
+		append_child(tree, tree_log);
+		append_child(tree, tree_leaves);
+		append_child(scene_graph, tree);
+	}
+
+	for (int i = 0; i < BUILDING_COUNT; i++)
+	{
+		GLfvector_t ground_scale = get_scale(ground->transform.m);
+
+		float minX = -(GRID_WIDTH / 2) * ground_scale.x;
+		float maxX = (GRID_WIDTH / 2) * ground_scale.x;
+
+		float minZ = -(GRID_HEIGHT / 2) * ground_scale.z;
+		float maxZ = (GRID_HEIGHT / 2) * ground_scale.z;
+
+		float x = minX + ((maxX - minX) * ((float)rand() / (float)RAND_MAX));
+		float z = minZ + ((maxZ - minZ) * (float)rand() / (float)RAND_MAX);
+		float y = getGroundHeight(x / ground_scale.x, z / ground_scale.z) * ground_scale.y + 20.0f;
+
+		if (y < 50.0f)
+		{
+			i--;
+			continue;
+		}
+
+		float xScale = 20.0f + ((100.0f - 20.0f) * ((float)rand() / (float)RAND_MAX));
+		float zScale = 20.0f + ((100.0f - 20.0f) * ((float)rand() / (float)RAND_MAX));
+		float yScale = 50.0f + ((200.0f - 50.0f) * ((float)rand() / (float)RAND_MAX));
+
+		scenegraph_node_t* building = create_node(
+			create_object(
+				get_transform(
+					create_glfvector3(x, y, z),
+					create_glfvector3(0, 0, 0),
+					create_glfvector3(xScale, yScale, zScale)
+				),
+				drawBuilding
+			)
+		);
+
+		append_child(scene_graph, building);
+	}
+
+	for (int i = 0; i < sizeof(wind_turbine_rotors) / sizeof(wind_turbine_rotors[0]); i++)
+	{
+		GLfvector_t ground_scale = get_scale(ground->transform.m);
+
+		float minX = -(GRID_WIDTH / 2) * ground_scale.x;
+		float maxX = (GRID_WIDTH / 2) * ground_scale.x;
+
+		float minZ = -(GRID_HEIGHT / 2) * ground_scale.z;
+		float maxZ = (GRID_HEIGHT / 2) * ground_scale.z;
+
+		float x = minX + ((maxX - minX) * ((float)rand() / (float)RAND_MAX));
+		float z = minZ + ((maxZ - minZ) * (float)rand() / (float)RAND_MAX);
+		float y = getGroundHeight(x / ground_scale.x, z / ground_scale.z) * ground_scale.y + 20.0f;
+
+		if (y < 700.0f)
+		{
+			i--;
+			continue;
+		}
+
+		scenegraph_node_t* wind_turbine = create_node(
+			create_object(
+				get_transform(
+					create_glfvector3(x, y, z),
+					create_glfvector3(0, 0, 0),
+					create_glfvector3(1, 1, 1)
+				),
+				NULL
+			)
+		);
+
+		scenegraph_node_t* wind_turbine_pole = create_node(
+			create_object(
+				get_transform(
+					create_glfvector3(0, 0, 0),
+					create_glfvector4(0, 1, 0, 90),
+					create_glfvector3(20, 200, 20)
+				),
+				drawWindTurbine
+			)
+		);
+
+		scenegraph_node_t* wind_turbine_rotor = create_node(
+			create_object(
+				get_transform(
+					create_glfvector3(0, 190, 0),
+					create_glfvector4(0, 0, 1, 90),
+					create_glfvector3(50, 50, 50)
+				),
+				drawHelicopterRotor
+			)
+		);
+
+		append_child(wind_turbine, wind_turbine_pole);
+		append_child(wind_turbine, wind_turbine_rotor);
+		append_child(scene_graph, wind_turbine);
+
+		wind_turbine_rotors[i] = wind_turbine_rotor->obj;
+	}
+
 	light_t* sun_light = &lights[0];
 	sun_light->enabled = 1;
 	sun_light->color = create_glfvector3(1, 1, 1);
-	sun_light->intensity = 0.5;
+	sun_light->intensity = 1.0;
 	sun_light->type = directional;
 	sun_light->position = create_glfvector3(5, 5, 0);
 	sun_light->dirty = 1;
+
+	light_t* flood_light = &lights[1];
+
+	flood_light->enabled = 1;
+	flood_light->color = create_glfvector3(1, 1, 1);
+	flood_light->intensity = 100.0;
+	flood_light->type = spot;
+	GLfvector_t floodLightDir = create_glfvector3(0, -1, 0);
+	flood_light->spotDirection = floodLightDir;
+	flood_light->spotCutoffAngle = 30;
+	flood_light->position = get_translation(_helicopter->transform.m);
+	flood_light->dirty = 1;
 
 	loadImage("grass.ppm", &groundTextureWidth, &groundTextureHeight, &groundTexture);
 
@@ -1074,9 +1281,9 @@ transform_t get_transform(GLfvector_t translation, GLfvector_t rotation, GLfvect
 	glPushMatrix();
 	glLoadIdentity();
 
+	glTranslatef(translation.x, translation.y, translation.z);
 	glScalef(scale.x, scale.y, scale.z);
 	glRotatef(rotation.w, rotation.x, rotation.y, rotation.z);
-	glTranslatef(translation.x, translation.y, translation.z);
 
 	glGetFloatv(GL_MODELVIEW_MATRIX, transform.m);
 
@@ -1199,6 +1406,7 @@ void drawScene(void)
 	DRAW_STRING(0, 160, "A/D: Strafe left/right.");
 	DRAW_STRING(0, 175, "L: Toggle wireframe mode.");
 	DRAW_STRING(0, 190, "C: Toggle camera mode.");
+	DRAW_STRING(0, 205, "F: Toggle helicopter flood light.");
 }
 
 void drawNode(scenegraph_node_t* node)
@@ -1391,6 +1599,15 @@ void drawHelicopterRotor(int** displayList)
 	glVertexPointer(3, GL_FLOAT, 0, &vertices);
 	glDrawArrays(GL_TRIANGLES, 0, sizeof(vertices) / sizeof(vertices[0]));
 	glDisableClientState(GL_VERTEX_ARRAY);
+}
+
+void drawHelicopterLeg(int** displayList)
+{
+	GLfloat diffuseMat[] = { 0.0, 0.0, 1.0, 1.0 };
+
+	glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuseMat);
+
+	glutSolidCylinder(0.2, 0.5, 10, 10);
 }
 
 double perlin(double x, double y, double z)
@@ -1712,4 +1929,92 @@ void drawSkybox(void)
 	glDepthMask(GL_TRUE);
 	glEnable(GL_LIGHTING);
 	glEnable(GL_FOG);
+}
+
+void drawTreeLog(int** displayList)
+{
+	GLfloat diffuseMat[] = { 0.38, 0.23, 0.08, 1.0 };
+	GLfloat ambientMat[] = { 0.0, 0.0, 0.0, 1.0 };
+
+	glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuseMat);
+	glMaterialfv(GL_FRONT, GL_AMBIENT, ambientMat);
+	
+	if (*displayList == NULL)
+	{
+		*displayList = glGenLists(1);
+
+		glNewList(*displayList, GL_COMPILE);
+
+		glutSolidCylinder(10.0, 20.0, 10, 10);
+
+		glEndList();
+	}
+
+	glCallList(*displayList);
+}
+
+void drawTreeLeaves(int** displayList)
+{
+	GLfloat diffuseMat[] = { 0.0, 1.0, 0.0, 1.0 };
+	GLfloat ambientMat[] = { 0.0, 0.0, 0.0, 1.0 };
+
+	glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuseMat);
+	glMaterialfv(GL_FRONT, GL_AMBIENT, ambientMat);
+
+	if (*displayList == NULL)
+	{
+		*displayList = glGenLists(1);
+
+		glNewList(*displayList, GL_COMPILE);
+
+		glutSolidSphere(1.0, 10, 10);
+
+		glEndList();
+	}
+
+	glCallList(*displayList);
+}
+
+void drawBuilding(int** displayList)
+{
+	GLfloat diffuseMat[] = { 0.5, 0.5, 0.5, 1.0 };
+	GLfloat ambientMat[] = { 0.0, 0.0, 0.0, 1.0 };
+
+	glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuseMat);
+	glMaterialfv(GL_FRONT, GL_AMBIENT, ambientMat);
+
+	if (*displayList == NULL)
+	{
+		*displayList = glGenLists(1);
+
+		glNewList(*displayList, GL_COMPILE);
+
+		glutSolidCube(1.0);
+
+		glEndList();
+	}
+
+	glCallList(*displayList);
+}
+
+void drawWindTurbine(int** displayList)
+{
+	GLfloat diffuseMat[] = { 0.5, 0.5, 0.5, 1.0 };
+	GLfloat ambientMat[] = { 0.0, 0.0, 0.0, 1.0 };
+
+	glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuseMat);
+	glMaterialfv(GL_FRONT, GL_AMBIENT, ambientMat);
+
+	if (*displayList == NULL)
+	{
+		*displayList = glGenLists(1);
+
+		glNewList(*displayList, GL_COMPILE);
+
+		glutSolidCylinder(1.0, 1.0, 20, 20);
+
+		glEndList();
+	}
+
+	glCallList(*displayList);
 }
