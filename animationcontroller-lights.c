@@ -13,6 +13,9 @@
  *
  ******************************************************************************/
 
+// Filip Jerkovic 20122575 - COMP612 Assignment 2
+// 22/10/2024
+
 #include <Windows.h>
 #include <freeglut.h>
 #include <math.h>
