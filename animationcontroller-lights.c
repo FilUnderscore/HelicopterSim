@@ -139,24 +139,24 @@ void init(void);
 void think(void);
 void initLights(void);
 
-void updateLightState(struct light_t* light, int index);
+void updateLightState(struct light* light, int index);
 void drawLights(void);
 
 void initScene(void);
 
 void drawScene(void);
-void drawNode(struct scenegraph_node_t* node);
+void drawNode(struct scenegraph_node* node);
 
-void drawGrid(int** displayList);
-void drawOcean(int** displayList);
-void drawHelicopterBody(int** displayList);
-void drawHelicopterTail(int** displayList);
-void drawHelicopterRotor(int** displayList);
-void drawHelicopterLeg(int** displayList);
-void drawTreeLog(int** displayList);
-void drawTreeLeaves(int** displayList);
-void drawBuilding(int** displayList);
-void drawWindTurbine(int** displayList);
+void drawGrid(GLuint* displayList);
+void drawOcean(GLuint* displayList);
+void drawHelicopterBody(GLuint* displayList);
+void drawHelicopterTail(GLuint* displayList);
+void drawHelicopterRotor(GLuint* displayList);
+void drawHelicopterLeg(GLuint* displayList);
+void drawTreeLog(GLuint* displayList);
+void drawTreeLeaves(GLuint* displayList);
+void drawBuilding(GLuint* displayList);
+void drawWindTurbine(GLuint* displayList);
 
 float getGroundHeight(float x, float z);
 
@@ -206,17 +206,17 @@ int p[512] = {
 int groundTextureWidth, groundTextureHeight;
 GLubyte* groundTexture;
 
-const char** skyboxTextureFilenames[3] =
+char skyboxTextureFilenames[3][17] =
 {
 	"bluecloud_bk.ppm",
 	"bluecloud_rt.ppm",
 	"bluecloud_lf.ppm",
 };
 
-int** skyboxTextureWidths[3];
-int** skyboxTextureHeights[3];
+int skyboxTextureWidths[3];
+int skyboxTextureHeights[3];
 
-GLubyte** skyboxTextures[3];
+GLubyte* skyboxTextures[3];
 
 // Orbit camera settings
 int dx = 0, dy = 0;
@@ -257,15 +257,15 @@ typedef struct
 typedef struct
 {
 	transform_t transform;
-	void (*draw)(int**);
+	void (*draw)(GLuint*);
 } object_t;
 
-typedef struct
+typedef struct scenegraph_node
 {
 	object_t* obj;
-	int* displayList;
+	GLuint displayList;
 
-	struct scenegraph_node_t** children;
+	struct scenegraph_node** children;
 	size_t children_count;
 } scenegraph_node_t;
 
@@ -275,7 +275,7 @@ typedef enum
 	spot
 } lighttype_t;
 
-typedef struct
+typedef struct light
 {
 	GLfvector_t position;
 	GLfvector_t color;
@@ -295,12 +295,12 @@ object_t* _helicopter_rotor_shaft = NULL;
 object_t* _helicopter_tail_rotor_shaft = NULL;
 
 object_t* ground = NULL;
-object_t** wind_turbine_rotors[WIND_TURBINE_COUNT];
+object_t* wind_turbine_rotors[WIND_TURBINE_COUNT];
 
 light_t lights[8];
 
 transform_t get_transform(GLfvector_t translation, GLfvector_t rotation, GLfvector_t scale);
-object_t* create_object(transform_t transform, void (*draw)());
+object_t* create_object(transform_t transform, void (*draw)(GLuint*));
 GLfvector_t create_glfvector4(GLfloat x, GLfloat y, GLfloat z, GLfloat w);
 GLfvector_t create_glfvector3(GLfloat x, GLfloat y, GLfloat z);
 scenegraph_node_t* create_node(object_t* obj);
@@ -377,15 +377,15 @@ void display(void)
 
 	// Update camera
 	GLfvector_t helicopter_position = get_translation(_helicopter->transform.m);
-	float camX = helicopter_position.x + sin((helicopterHeading) * 3.1415f / 180.0f) * 10.0f;
-	float camZ = helicopter_position.z + cos((helicopterHeading) * 3.1415f / 180.0f) * 10.0f;
+	float camX = helicopter_position.x + (float)sin((helicopterHeading) * 3.1415f / 180.0f) * 10.0f;
+	float camZ = helicopter_position.z + (float)cos((helicopterHeading) * 3.1415f / 180.0f) * 10.0f;
 
 	glLoadIdentity();
 	drawSkybox();
 	
 	if(orbitCamera)
 	{
-		cameraYaw = fmod(cameraYaw + dx * 50 * FRAME_TIME_SEC, 360.0f);
+		cameraYaw = (float)fmod(cameraYaw + dx * 50 * FRAME_TIME_SEC, 360.0f);
 		cameraPitch += dy * 50 * FRAME_TIME_SEC;
 
 		if (cameraPitch > 90.0f)
@@ -411,7 +411,7 @@ void display(void)
 		dx = 0;
 		dy = 0;
 
-		DRAW_STRING(viewport_width / 2, 190, "Camera Yaw: %f Camera Pitch: %f", cameraYaw, cameraPitch);
+		DRAW_STRING((float)viewport_width / 2.0f, 190, "Camera Yaw: %f Camera Pitch: %f", cameraYaw, cameraPitch);
 	}
 	else
 	{
@@ -700,10 +700,10 @@ void init(void)
 
 	glEnable(GL_FOG);
 
-	GLfloat fogColor[4] = { 0.67, 0.82, 0.85, 0.2 };
+	GLfloat fogColor[4] = { 0.67f, 0.82f, 0.85f, 0.2f };
 	glFogfv(GL_FOG_COLOR, fogColor);
 	glFogf(GL_FOG_MODE, GL_EXP);
-	glFogf(GL_FOG_DENSITY, 0.0005);
+	glFogf(GL_FOG_DENSITY, 0.0005f);
 }
 
 /*
@@ -825,10 +825,8 @@ void think(void)
 			glPushMatrix();
 			glLoadMatrixf(_helicopter->transform.m);
 
-			GLfvector_t vec = get_translation(_helicopter->transform.m);
-
 			glRotatef(FRAME_TIME_SEC * 100 * keyboardMotion.Yaw, 0, 1, 0);
-			helicopterHeading = fmod(helicopterHeading + FRAME_TIME_SEC * 100 * keyboardMotion.Yaw, 360.0f);
+			helicopterHeading = (float)fmod(helicopterHeading + FRAME_TIME_SEC * 100 * keyboardMotion.Yaw, 360.0f);
 
 			if (helicopterHeading < 0.0f)
 			{
@@ -958,14 +956,14 @@ void drawLights(void)
 			GLfloat lightTheta = light->spotCutoffAngle;
 			glLightfv(GL_LIGHT0 + i, GL_SPOT_DIRECTION, lightSpotDirection);
 			glLightf(GL_LIGHT0 + i, GL_SPOT_CUTOFF, lightTheta);
-			glLightf(GL_LIGHT0 + i, GL_LINEAR_ATTENUATION, 0.01);
+			glLightf(GL_LIGHT0 + i, GL_LINEAR_ATTENUATION, 0.01f);
 			break;
 		}
 		}
 	}
 }
 
-void updateLightState(light_t* light, int index)
+void updateLightState(struct light* light, int index)
 {
 	if (light->enabled)
 	{
@@ -1292,7 +1290,7 @@ transform_t get_transform(GLfvector_t translation, GLfvector_t rotation, GLfvect
 	return transform;
 }
 
-object_t* create_object(transform_t transform, void (*draw)())
+object_t* create_object(transform_t transform, void (*draw)(GLuint*))
 {
 	object_t* object = malloc(sizeof(object_t));
 
@@ -1309,7 +1307,7 @@ object_t* create_object(transform_t transform, void (*draw)())
 
 GLfvector_t create_glfvector4(GLfloat x, GLfloat y, GLfloat z, GLfloat w)
 {
-	GLfvector_t glfvector;
+	GLfvector_t glfvector = { 0 };
 
 	glfvector.x = x;
 	glfvector.y = y;
@@ -1331,7 +1329,7 @@ scenegraph_node_t* create_node(object_t* obj)
 	if (node != NULL)
 	{
 		node->obj = obj;
-		node->displayList = NULL;
+		node->displayList = -1;
 		node->children = NULL;
 		node->children_count = 0;
 	}
@@ -1434,7 +1432,7 @@ void drawNode(scenegraph_node_t* node)
 
 float getGroundHeight(float x, float z)
 {
-	return (perlin(x / GRID_WIDTH, 0.5, z / GRID_WIDTH) + 0.25) * 100;
+	return (float)((perlin((double)x / GRID_WIDTH, 0.5, (double)z / GRID_WIDTH) + 0.25) * 100);
 }
 
 void drawPlane(int width, int height, int usePerlin)
@@ -1442,23 +1440,23 @@ void drawPlane(int width, int height, int usePerlin)
 	for (int x = -width / 2; x < width / 2; x++)
 	{
 		glPushMatrix();
-		glTranslatef(x, 0, 0);
+		glTranslatef((float)x, 0, 0);
 
 		for (int z = -height / 2; z < height / 2; z++)
 		{
 			glPushMatrix();
-			glTranslatef(0, 0, z);
+			glTranslatef(0, 0, (float)z);
 
 			glBegin(GL_TRIANGLE_FAN);
 
-			double y0 = 0, y1 = 0, y2 = 0, y3 = 0;
+			float y0 = 0, y1 = 0, y2 = 0, y3 = 0;
 
 			if (usePerlin)
 			{
-				y0 = getGroundHeight(x, z);
-				y1 = getGroundHeight(x + 1, z);
-				y2 = getGroundHeight(x, z + 1);
-				y3 = getGroundHeight(x + 1, z + 1);
+				y0 = getGroundHeight((float)x, (float)z);
+				y1 = getGroundHeight((float)(x + 1), (float)z);
+				y2 = getGroundHeight((float)x, (float)(z + 1));
+				y3 = getGroundHeight((float)(x + 1), (float)(z + 1));
 			}
 
 			glNormal3f(0, 1, 0);
@@ -1489,7 +1487,7 @@ void drawPlane(int width, int height, int usePerlin)
 	}
 }
 
-void drawGrid(int** displayList)
+void drawGrid(GLuint* displayList)
 {
 	GLfloat diffuseMat[] = { 0.0, 1.0, 0.0, 1.0 };
 	GLfloat ambientMat[] = { 0.0, 0.0, 0.0, 1.0 };
@@ -1507,7 +1505,7 @@ void drawGrid(int** displayList)
 
 	gluBuild2DMipmaps(GL_TEXTURE_2D, 3, groundTextureWidth, groundTextureHeight, GL_RGB, GL_UNSIGNED_BYTE, groundTexture);
 
-	if (*displayList == NULL)
+	if (*displayList == -1)
 	{
 		*displayList = glGenLists(1);
 
@@ -1523,18 +1521,18 @@ void drawGrid(int** displayList)
 	glDisable(GL_TEXTURE_2D);
 }
 
-void drawOcean(int** displayList)
+void drawOcean(GLuint* displayList)
 {
-	GLfloat diffuseMat[] = { 0.0, 0.1, 1.0, 1.0 };
-	GLfloat ambientMat[] = { 0.0, 0.0, 0.0, 1.0 };
+	GLfloat diffuseMat[] = { 0.0f, 0.1f, 1.0f, 1.0f };
+	GLfloat ambientMat[] = { 0.0f, 0.0f, 0.0f, 1.0f };
 
-	GLfloat shine = 0.1;
+	GLfloat shine = 0.1f;
 
 	glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuseMat);
 	glMaterialfv(GL_FRONT, GL_AMBIENT, ambientMat);
 	glMaterialf(GL_FRONT, GL_SHININESS, shine);
 
-	if (*displayList == NULL)
+	if (*displayList == -1)
 	{
 		*displayList = glGenLists(1);
 
@@ -1548,7 +1546,7 @@ void drawOcean(int** displayList)
 	glCallList(*displayList);
 }
 
-void drawHelicopterBody(int** displayList)
+void drawHelicopterBody(GLuint* displayList)
 {
 	GLfloat diffuseMat[] = {1.0, 0.0, 0.0, 1.0};
 
@@ -1556,7 +1554,7 @@ void drawHelicopterBody(int** displayList)
 	glutSolidSphere(1.0, 20, 20);
 }
 
-void drawHelicopterTail(int** displayList)
+void drawHelicopterTail(GLuint* displayList)
 {
 	GLfloat diffuseMat[] = { 1.0, 1.0, 0.0, 1.0 };
 
@@ -1564,35 +1562,35 @@ void drawHelicopterTail(int** displayList)
 	glutSolidCylinder(1.0, 1.0, 20, 20);
 }
 
-void drawHelicopterRotor(int** displayList)
+void drawHelicopterRotor(GLuint* displayList)
 {
 	GLfloat diffuseMat[] = { 1.0, 1.0, 1.0, 1.0 };
 
 	glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuseMat);
 
 	glPushMatrix();
-	glTranslatef(0, 0.1, 0);
+	glTranslatef(0, 0.1f, 0);
 	glRotatef(90, 1, 0, 0);
 	glutSolidCylinder(0.1, 0.1, 10, 10);
 	glPopMatrix();
 
 	float vertices[][3] =
 	{
-		{ -1.0, 0.105, -0.05 },
-		{ 1.0, 0.105, -0.05 },
-		{ 1.0, 0.105, 0.05 },
+		{ -1.0f, 0.105f, -0.05f },
+		{ 1.0f, 0.105f, -0.05f },
+		{ 1.0f, 0.105f, 0.05f },
 
-		{ 1.0, 0.105, 0.05 },
-		{ -1.0, 0.105, 0.05 },
-		{ -1.0, 0.105, -0.05 },
+		{ 1.0f, 0.105f, 0.05f },
+		{ -1.0f, 0.105f, 0.05f },
+		{ -1.0f, 0.105f, -0.05f },
 
-		{ -0.05, 0.105, -1.0 },
-		{ 0.05, 0.105, -1.0 },
-		{ 0.05, 0.105, 1.0 },
+		{ -0.05f, 0.105f, -1.0f },
+		{ 0.05f, 0.105f, -1.0f },
+		{ 0.05f, 0.105f, 1.0f },
 
-		{ 0.05, 0.105, 1.0 },
-		{ -0.05, 0.105, 1.0 },
-		{ -0.05, 0.105, -1.0 },
+		{ 0.05f, 0.105f, 1.0f },
+		{ -0.05f, 0.105f, 1.0f },
+		{ -0.05f, 0.105f, -1.0f },
 	};
 
 	glEnableClientState(GL_VERTEX_ARRAY);
@@ -1601,7 +1599,7 @@ void drawHelicopterRotor(int** displayList)
 	glDisableClientState(GL_VERTEX_ARRAY);
 }
 
-void drawHelicopterLeg(int** displayList)
+void drawHelicopterLeg(GLuint* displayList)
 {
 	GLfloat diffuseMat[] = { 0.0, 0.0, 1.0, 1.0 };
 
@@ -1747,6 +1745,13 @@ void loadImage(const char* filename, int* imageWidth, int* imageHeight, GLubyte*
 	rewind(fileID);
 
 	char* buffer = calloc(1, fileSize);
+
+	if (buffer == NULL)
+	{
+		printf("Failed to allocate image file data buffer.");
+		exit(0);
+	}
+
 	fread(buffer, fileSize, 1, fileID);
 	fclose(fileID);
 
@@ -1800,8 +1805,14 @@ void loadImage(const char* filename, int* imageWidth, int* imageHeight, GLubyte*
 	// allocate enough memory for the image  (3*) because of the RGB data
 	*imageData = calloc(totalPixels, 3 * sizeof(GLubyte));
 
+	if (*imageData == NULL)
+	{
+		printf("Failed to allocate image data buffer.");
+		exit(0);
+	}
+
 	// determine the scaling for RGB values
-	RGBScaling = 255.0 / maxValue;
+	RGBScaling = 255.0f / maxValue;
 
 
 	// if the maxValue is 255 then we do not need to scale the 
@@ -1830,12 +1841,14 @@ void loadImage(const char* filename, int* imageWidth, int* imageHeight, GLubyte*
 		for (i = 0; i < totalPixels; i++)
 		{
 			// read in the current pixel from the file
-			fscanf_s(fileID, "%d %d %d", &red, &green, &blue);
+			red = buffer[filePos++];
+			green = buffer[filePos++];
+			blue = buffer[filePos++];
 
 			// store the red, green and blue data of the current pixel in the data array
-			(*imageData)[3 * totalPixels - 3 * i - 3] = red * RGBScaling;
-			(*imageData)[3 * totalPixels - 3 * i - 2] = green * RGBScaling;
-			(*imageData)[3 * totalPixels - 3 * i - 1] = blue * RGBScaling;
+			(*imageData)[3 * totalPixels - 3 * i - 3] = (GLubyte)(red * RGBScaling);
+			(*imageData)[3 * totalPixels - 3 * i - 2] = (GLubyte)(green * RGBScaling);
+			(*imageData)[3 * totalPixels - 3 * i - 1] = (GLubyte)(blue * RGBScaling);
 		}
 	}
 
@@ -1931,15 +1944,15 @@ void drawSkybox(void)
 	glEnable(GL_FOG);
 }
 
-void drawTreeLog(int** displayList)
+void drawTreeLog(GLuint* displayList)
 {
-	GLfloat diffuseMat[] = { 0.38, 0.23, 0.08, 1.0 };
-	GLfloat ambientMat[] = { 0.0, 0.0, 0.0, 1.0 };
+	GLfloat diffuseMat[] = { 0.38f, 0.23f, 0.08f, 1.0f };
+	GLfloat ambientMat[] = { 0.0f, 0.0f, 0.0f, 1.0f };
 
 	glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuseMat);
 	glMaterialfv(GL_FRONT, GL_AMBIENT, ambientMat);
 	
-	if (*displayList == NULL)
+	if (*displayList == -1)
 	{
 		*displayList = glGenLists(1);
 
@@ -1953,7 +1966,7 @@ void drawTreeLog(int** displayList)
 	glCallList(*displayList);
 }
 
-void drawTreeLeaves(int** displayList)
+void drawTreeLeaves(GLuint* displayList)
 {
 	GLfloat diffuseMat[] = { 0.0, 1.0, 0.0, 1.0 };
 	GLfloat ambientMat[] = { 0.0, 0.0, 0.0, 1.0 };
@@ -1961,7 +1974,7 @@ void drawTreeLeaves(int** displayList)
 	glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuseMat);
 	glMaterialfv(GL_FRONT, GL_AMBIENT, ambientMat);
 
-	if (*displayList == NULL)
+	if (*displayList == -1)
 	{
 		*displayList = glGenLists(1);
 
@@ -1975,7 +1988,7 @@ void drawTreeLeaves(int** displayList)
 	glCallList(*displayList);
 }
 
-void drawBuilding(int** displayList)
+void drawBuilding(GLuint* displayList)
 {
 	GLfloat diffuseMat[] = { 0.5, 0.5, 0.5, 1.0 };
 	GLfloat ambientMat[] = { 0.0, 0.0, 0.0, 1.0 };
@@ -1983,7 +1996,7 @@ void drawBuilding(int** displayList)
 	glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuseMat);
 	glMaterialfv(GL_FRONT, GL_AMBIENT, ambientMat);
 
-	if (*displayList == NULL)
+	if (*displayList == -1)
 	{
 		*displayList = glGenLists(1);
 
@@ -1997,7 +2010,7 @@ void drawBuilding(int** displayList)
 	glCallList(*displayList);
 }
 
-void drawWindTurbine(int** displayList)
+void drawWindTurbine(GLuint* displayList)
 {
 	GLfloat diffuseMat[] = { 0.5, 0.5, 0.5, 1.0 };
 	GLfloat ambientMat[] = { 0.0, 0.0, 0.0, 1.0 };
@@ -2005,7 +2018,7 @@ void drawWindTurbine(int** displayList)
 	glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuseMat);
 	glMaterialfv(GL_FRONT, GL_AMBIENT, ambientMat);
 
-	if (*displayList == NULL)
+	if (*displayList == -1)
 	{
 		*displayList = glGenLists(1);
 
