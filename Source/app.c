@@ -1,6 +1,8 @@
 #pragma comment(lib, "glfw3.lib")
 #pragma comment(lib, "OpenGL32.lib")
 
+#include <glad/glad.h>
+
 #include <Windows.h>
 #include <GLFW/glfw3.h>
 #include <math.h>
@@ -21,6 +23,9 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 	window = glfwCreateWindow(720, 480, "Helicopter Simulator", NULL, NULL);
 
 	if (!window)
@@ -30,6 +35,12 @@ int main(int argc, char **argv)
 	}
 
 	glfwMakeContextCurrent(window);
+
+	if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
+	{
+		return -1;
+	}
+
 	glfwSwapInterval(1);
 
 	glfwSetKeyCallback(window, key_callback);

@@ -9,11 +9,22 @@ terrain_t* create_terrain(int width, int height, texture_t* texture)
 {
 	terrain_t* terrain = (terrain_t*)calloc(1, sizeof(terrain_t));
 	terrain->object.transform = get_transform(create_glfvector3(0, 0, 0), create_glfvector3(0, 0, 0), create_glfvector3(1, 1, 1));
-	terrain->object.draw = draw_terrain;
 	terrain->texture = texture;
 	terrain->width = width;
 	terrain->height = height;
 	terrain->usePerlin = 1;
+
+	float vertices[] = {
+		-0.5f, -0.5f, 0.0f,
+		0.5f, -0.5f, 0.0f,
+		0.0f,  0.5f, 0.0f
+	};
+
+	unsigned int indices[] = {
+		0, 1, 2
+	};
+
+	terrain->mesh = create_mesh(vertices, 9, indices, 3);
 
 	return terrain;
 }

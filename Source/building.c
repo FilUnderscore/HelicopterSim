@@ -13,7 +13,7 @@ object_t* create_building(GLfvector_t location, GLfvector_t scale)
 		create_glfvector3(scale.x, scale.y, scale.z)
 	);
 
-	building->draw = draw_building;
+	//building->draw = draw_building;
 
 	return building;
 }

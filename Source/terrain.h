@@ -3,6 +3,7 @@
 #include "scenegraph.h"
 #include "texture.h"
 #include "vector.h"
+#include "mesh.h"
 
 typedef struct terrain
 {
@@ -10,6 +11,7 @@ typedef struct terrain
 	texture_t* texture;
 	int width, height;
 	int usePerlin;
+	mesh_t* mesh;
 } terrain_t;
 
 terrain_t* create_terrain(int width, int height, texture_t* texture);

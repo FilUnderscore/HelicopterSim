@@ -23,8 +23,10 @@
     <ClCompile Include="Source\building.c" />
     <ClCompile Include="Source\camera.c" />
     <ClCompile Include="Source\game.c" />
+    <ClCompile Include="Source\glad.c" />
     <ClCompile Include="Source\linkedlist.c" />
     <ClCompile Include="Source\matrix.c" />
+    <ClCompile Include="Source\mesh.cpp" />
     <ClCompile Include="Source\quaternion.c" />
     <ClCompile Include="Source\terrain.c" />
     <ClCompile Include="Source\helicopter.c" />
@@ -54,6 +56,7 @@
     <ClInclude Include="Source\game.h" />
     <ClInclude Include="Source\linkedlist.h" />
     <ClInclude Include="Source\matrix.h" />
+    <ClInclude Include="Source\mesh.h" />
     <ClInclude Include="Source\quaternion.h" />
     <ClInclude Include="Source\terrain.h" />
     <ClInclude Include="Source\helicopter.h" />

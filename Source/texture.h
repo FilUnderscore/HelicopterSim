@@ -3,7 +3,8 @@
 typedef struct texture
 {
 	unsigned char* data;
-	int width, height;
+	unsigned int width, height;
+	unsigned int gid;
 } texture_t;
 
 texture_t* load_texture(const char* file);
